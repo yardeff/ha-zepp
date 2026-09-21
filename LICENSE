@@ -19,3 +19,34 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+---
+
+DISCLAIMER & TRADEMARKS
+
+This software is an independent, community-driven project and is not affiliated,
+associated, authorized, endorsed by, or in any way officially connected with
+Zepp Health Corporation, Amazfit, Anhui Huami Information Technology Co., Ltd.,
+or any of their subsidiaries or affiliates.
+
+All product names, logos, trademarks, and registered trademarks (including
+Zepp, Amazfit, and PAI) are property of their respective owners. Their use in
+this project is solely for device identification and technical interoperability
+purposes.
+
+HEALTH & MEDICAL DISCLAIMER
+
+Health and biometric metrics provided by this software (including heart rate,
+SpO2, sleep stages, HRV, and stress levels) are intended strictly for personal
+informational and home automation purposes.
+
+This software and its output do not constitute medical advice, diagnosis, or
+treatment. The data must never be used for clinical decision-making or to
+replace professional medical consultations.
+
+CLOUD & API SERVICES
+
+This software interacts with third-party cloud services and APIs. The author
+assumes no liability for service interruptions, modifications in third-party
+API availability, account limitations, or device behavior resulting from the
+use of this software.

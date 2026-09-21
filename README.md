@@ -146,29 +146,9 @@ data:
 2. Search for **Zepp** and select it.
 3. Follow the guided instructions presented in the setup dialog corresponding to your login type (Direct Credentials or Browser Cookies).
 
----
+## License
 
-## License & Legal Disclaimers
-
-### License
-
-This project is licensed under the **MIT License**.
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for full details and legal disclaimers.
 
 Copyright (c) 2026 yardev
-
-Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files, to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, subject to the conditions stated in the full [LICENSE](LICENSE) file.
-
-### Disclaimer & Trademarks
-
-- This project is an independent, community-driven open-source development and is **not affiliated, associated, authorized, endorsed by, or in any way officially connected** with Zepp Health Corporation, Amazfit, Anhui Huami Information Technology Co., Ltd., or any of their subsidiaries or affiliates.
-- All product names, logos, trademarks, and registered trademarks (including *Zepp*, *Amazfit*, and *PAI*) are property of their respective owners. Their use in this integration is solely for device identification and technical interoperability purposes.
-
-### Health & Medical Disclaimer
-
-- Health and biometric metrics provided by this integration (including heart rate, $SpO_2$, sleep stages, HRV, and stress levels) are intended **strictly for personal informational and home automation purposes**.
-- This software and its output do not constitute medical advice, diagnosis, or treatment. The data must never be used for clinical decision-making or to replace professional medical consultations.
-
-### Cloud & API Services
-
-This software is provided "as is", without warranty of any kind, express or implied. The author assumes no liability for service interruptions, modifications in third-party API availability, account limitations, or device behavior resulting from the use of this integration.
 
