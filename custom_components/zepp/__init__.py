@@ -13,7 +13,7 @@ from .services import async_register_services
 
 _LOGGER = logging.getLogger(__name__)
 
-PLATFORMS: list[Platform] = [Platform.SENSOR]
+PLATFORMS: list[Platform] = [Platform.SENSOR, Platform.BUTTON]
 
 
 async def async_setup(hass: HomeAssistant, config: dict) -> bool:
@@ -29,24 +29,32 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     coordinator = ZeppCoordinator(hass, entry)
     await coordinator.async_config_entry_first_refresh()
 
+    # Launch background historical backfill (initial 365 days / 1 year)
+    sync_task = hass.async_create_task(
+        async_sync_historical_data(hass, entry.data, days=365)
+    )
+
     hass.data[DOMAIN][entry.entry_id] = {
         "data": entry.data,
         "coordinator": coordinator,
+        "history_sync_task": sync_task,
     }
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
-
-    # Launch background historical backfill (initial 365 days / 1 year)
-    hass.async_create_task(
-        async_sync_historical_data(hass, entry.data, days=365)
-    )
 
     return True
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload a config entry."""
+    entry_info = hass.data.get(DOMAIN, {}).get(entry.entry_id)
+    if entry_info:
+        sync_task = entry_info.get("history_sync_task")
+        if sync_task and not sync_task.done():
+            _LOGGER.debug("Cancelling active historical sync task during unload")
+            sync_task.cancel()
+
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if unload_ok:
-        hass.data[DOMAIN].pop(entry.entry_id)
+        hass.data[DOMAIN].pop(entry.entry_id, None)
     return unload_ok

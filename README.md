@@ -128,7 +128,7 @@ data:
 
 1. Open **HACS** in your Home Assistant interface.
 2. Navigate to **Integrations**, click the overflow menu (three vertical dots), and select **Custom repositories**.
-3. Enter `https://github.com/yarchefis/ha-zepp` in the **Repository** field.
+3. Enter `https://github.com/yardeff/ha-zepp` in the **Repository** field.
 4. Set **Type** to `Integration` and click **Add**.
 5. Search for `Zepp`, click **Download**, and restart Home Assistant.
 

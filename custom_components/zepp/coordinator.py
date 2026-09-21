@@ -137,8 +137,8 @@ class ZeppCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "last_updated": now.isoformat(),
         }
 
+        # 1. Band data: Steps, Distance, Calories, Sleep, and Heart Rate
         try:
-            # 1. Band data: Steps, Distance, Calories, Sleep, and Heart Rate
             band_items = await async_fetch_band_data(
                 session, self.host, self.apptoken, self.userid, yesterday_str, today_str, query_type="detail"
             )
@@ -195,8 +195,13 @@ class ZeppCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                             result["sleep_rhr"] = slp.get("rhr")
                             if result["sleep_rhr"] and result["resting_hr"] is None:
                                 result["resting_hr"] = result["sleep_rhr"]
+        except ZeppAuthError:
+            raise
+        except Exception as err:
+            _LOGGER.debug("Error updating band data: %s", err)
 
-            # 2. Stress
+        # 2. Stress
+        try:
             stress_events = await async_fetch_user_events(
                 session, self.host, self.apptoken, self.userid, "all_day_stress", from_ts=day_ago_ms, to_ts=now_ms, limit=5
             )
@@ -215,8 +220,13 @@ class ZeppCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                                 break
                         except (ValueError, TypeError):
                             pass
+        except ZeppAuthError:
+            raise
+        except Exception as err:
+            _LOGGER.debug("Error updating stress events: %s", err)
 
-            # 3. Blood Oxygen & Breathing Quality
+        # 3. Blood Oxygen & Breathing Quality
+        try:
             spo2_events = await async_fetch_user_events(
                 session, self.host, self.apptoken, self.userid, "blood_oxygen", from_ts=day_ago_ms, to_ts=now_ms, limit=10
             )
@@ -240,8 +250,13 @@ class ZeppCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                                 result["spo2"] = int(event["spo2_decrease"])
                             except (ValueError, TypeError):
                                 pass
+        except ZeppAuthError:
+            raise
+        except Exception as err:
+            _LOGGER.debug("Error updating SpO2 events: %s", err)
 
-            # 4. PAI
+        # 4. PAI
+        try:
             pai_events = await async_fetch_user_events(
                 session, self.host, self.apptoken, self.userid, "PaiHealthInfo", from_ts=day_ago_ms, to_ts=now_ms, limit=5
             )
@@ -258,8 +273,13 @@ class ZeppCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                         result["resting_hr"] = int(latest_pai["restHr"])
                     except (ValueError, TypeError):
                         pass
+        except ZeppAuthError:
+            raise
+        except Exception as err:
+            _LOGGER.debug("Error updating PAI events: %s", err)
 
-            # 5. HRV rMSSD
+        # 5. HRV rMSSD
+        try:
             hrv_events = await async_fetch_v2_events(
                 session, self.host, self.apptoken, "HRVRMSSD", sub_type="real_data", from_ts=day_ago_ms, to_ts=now_ms, limit=5
             )
@@ -271,8 +291,13 @@ class ZeppCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     last_sample = samples[-1]
                     if "hrv" in last_sample:
                         result["hrv"] = last_sample["hrv"]
+        except ZeppAuthError:
+            raise
+        except Exception as err:
+            _LOGGER.debug("Error updating HRV events: %s", err)
 
-            # 6. Training Load (SPORT_LOAD)
+        # 6. Training Load (SPORT_LOAD)
+        try:
             load_items = await async_fetch_sport_load(
                 session, self.host, self.apptoken, self.userid, yesterday_str, today_str, limit=5
             )
@@ -282,8 +307,13 @@ class ZeppCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 result["training_load_today"] = latest_load.get("currnetDayTrainLoad")
                 result["training_load_min"] = latest_load.get("wtlSumOptimalMin")
                 result["training_load_max"] = latest_load.get("wtlSumOptimalMax")
+        except ZeppAuthError:
+            raise
+        except Exception as err:
+            _LOGGER.debug("Error updating sport load: %s", err)
 
-            # 7. Weight & Scale
+        # 7. Weight & Scale
+        try:
             weight_items = await async_fetch_weight_records(
                 session, self.host, self.apptoken, self.userid, limit=2
             )
@@ -295,11 +325,36 @@ class ZeppCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 result["muscle_mass"] = latest_w.get("muscle_mass")
                 result["body_water"] = latest_w.get("body_water_rate")
                 result["bone_mass"] = latest_w.get("bone_mass")
-
         except ZeppAuthError:
             raise
         except Exception as err:
-            _LOGGER.debug("Error updating Zepp metrics: %s", err)
+            _LOGGER.debug("Error updating weight records: %s", err)
+
+        # 8. Device battery & status
+        try:
+            from .api import async_fetch_devices
+            raw_devices = await async_fetch_devices(session, self.apptoken, self.userid, self.host)
+            if raw_devices:
+                device_batteries: dict[str, int] = {}
+                for dev in raw_devices:
+                    dev_id = dev.get("deviceId") or dev.get("macAddress", "").replace(":", "")
+                    for raw_source in [dev.get("additionalSource"), dev.get("additionalInfo")]:
+                        if not raw_source:
+                            continue
+                        try:
+                            p = json.loads(raw_source) if isinstance(raw_source, str) else raw_source
+                            if isinstance(p, dict) and "battery" in p:
+                                b_val = p["battery"].get("level")
+                                if b_val is not None:
+                                    device_batteries[dev_id] = int(b_val)
+                                    break
+                        except Exception:
+                            pass
+                result["device_batteries"] = device_batteries
+        except ZeppAuthError:
+            raise
+        except Exception as dev_err:
+            _LOGGER.debug("Failed refreshing device batteries: %s", dev_err)
 
         return result
 

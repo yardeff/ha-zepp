@@ -80,6 +80,7 @@ async def async_setup_entry(
             ZeppMacAddressSensor(device_id, device_name, device_info, mac),
             ZeppFirmwareSensor(device_id, device_name, device_info, fw),
             ZeppSerialSensor(device_id, device_name, device_info, sn),
+            ZeppBatterySensor(coordinator, device_id, device_name, device_info, dev.get("battery")),
         ])
 
         # 2. Activity Sensors
@@ -187,6 +188,35 @@ class ZeppSerialSensor(SensorEntity):
         self._attr_unique_id = f"{device_id}_serial"
         self._attr_device_info = device_info
         self._attr_native_value = sn or "Unknown"
+
+
+class ZeppBatterySensor(CoordinatorEntity[ZeppCoordinator], SensorEntity):
+    _attr_has_entity_name = True
+    _attr_name = "Battery"
+    _attr_device_class = SensorDeviceClass.BATTERY
+    _attr_native_unit_of_measurement = PERCENTAGE
+    _attr_state_class = SensorStateClass.MEASUREMENT
+
+    def __init__(
+        self,
+        coordinator: ZeppCoordinator,
+        device_id: str,
+        device_name: str,
+        device_info: DeviceInfo,
+        initial_battery: int | None = None,
+    ) -> None:
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{device_id}_battery"
+        self._attr_device_info = device_info
+        self._device_id = device_id
+        self._initial_battery = initial_battery
+
+    @property
+    def native_value(self) -> int | None:
+        batteries = self.coordinator.data.get("device_batteries", {})
+        if self._device_id in batteries:
+            return batteries[self._device_id]
+        return self._initial_battery
 
 
 # ==================== Activity Sensors ====================

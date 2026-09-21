@@ -394,6 +394,21 @@ async def async_discover_zepp_devices(
                     except Exception:
                         pass
 
+                # Extract battery status if present in device payload
+                battery = None
+                for raw_source in [dev.get("additionalSource"), dev.get("additionalInfo")]:
+                    if not raw_source:
+                        continue
+                    try:
+                        p = json.loads(raw_source) if isinstance(raw_source, str) else raw_source
+                        if isinstance(p, dict) and "battery" in p:
+                            b_val = p["battery"].get("level")
+                            if b_val is not None:
+                                battery = int(b_val)
+                                break
+                    except Exception:
+                        pass
+
                 parsed_devices.append({
                     "device_id": device_id,
                     "device_name": model_name,
@@ -405,7 +420,16 @@ async def async_discover_zepp_devices(
                     "bt_mac": bt_mac,
                     "hardware_version": hw_ver,
                     "product_id": product_id,
+                    "active_status": dev.get("activeStatus", 1 if len(devices_to_parse) == 1 else 0),
+                    "last_active_time": dev.get("lastActiveStatusUpdateTime") or dev.get("lastStatusUpdateTime"),
+                    "battery": battery,
                 })
+
+            # Sort so that actively worn device is always the first/primary device
+            parsed_devices.sort(
+                key=lambda d: (d.get("active_status", 0), d.get("last_active_time") or 0),
+                reverse=True,
+            )
 
             return host, parsed_devices
 
