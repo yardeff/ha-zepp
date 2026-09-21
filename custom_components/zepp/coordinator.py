@@ -10,6 +10,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
+from homeassistant.util import dt as dt_util
 
 from .api import (
     ZeppAuthError,
@@ -91,7 +92,7 @@ class ZeppCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     async def _fetch_metrics(self) -> dict[str, Any]:
         """Fetch real-time and daily data from Zepp API."""
         session = async_get_clientsession(self.hass)
-        now = datetime.datetime.now()
+        now = dt_util.now()
         today_str = now.strftime("%Y-%m-%d")
         yesterday_str = (now - datetime.timedelta(days=1)).strftime("%Y-%m-%d")
         now_ms = int(now.timestamp() * 1000)
@@ -142,39 +143,24 @@ class ZeppCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 session, self.host, self.apptoken, self.userid, yesterday_str, today_str, query_type="detail"
             )
             if band_items:
-                # Find today or most recent item
-                for item in reversed(band_items):
-                    summary_raw = item.get("summary")
+                # Strictly isolate today's record for daily accumulators and live HR
+                today_item = next((item for item in band_items if item.get("date_time") == today_str), None)
+                if today_item:
+                    summary_raw = today_item.get("summary")
                     if summary_raw:
                         summary = decode_band_summary(summary_raw)
                         if summary:
-                            if "stp" in summary and result["steps"] == 0:
+                            if "stp" in summary:
                                 stp = summary["stp"]
                                 result["steps"] = stp.get("ttl", 0)
                                 result["distance"] = stp.get("dis", 0)
                                 result["calories"] = stp.get("cal", 0)
-                                if "goal" in summary:
-                                    result["step_goal"] = summary["goal"]
+                            if "goal" in summary:
+                                result["step_goal"] = summary["goal"]
 
-                            if "slp" in summary and result["sleep_score"] is None:
-                                slp = summary["slp"]
-                                result["sleep_score"] = slp.get("ss")
-                                dp = slp.get("dp", 0)
-                                lt = slp.get("lt", 0)
-                                dt = slp.get("dt", 0)
-                                result["deep_sleep"] = dp
-                                result["light_sleep"] = lt
-                                result["rem_sleep"] = dt
-                                result["awake_time"] = slp.get("wk")
-                                result["wake_count"] = slp.get("wc")
-                                result["sleep_duration"] = dp + lt + dt
-                                result["sleep_rhr"] = slp.get("rhr")
-                                if result["sleep_rhr"] and result["resting_hr"] is None:
-                                    result["resting_hr"] = result["sleep_rhr"]
-
-                    # Extract live heart rate from data_hr
-                    data_hr = item.get("data_hr")
-                    if data_hr and result["heart_rate"] is None:
+                    # Extract live heart rate from today's data_hr
+                    data_hr = today_item.get("data_hr")
+                    if data_hr:
                         try:
                             import base64
                             raw_hr = base64.b64decode(data_hr)
@@ -186,6 +172,29 @@ class ZeppCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                                 result["hr_avg"] = round(sum(valid_hr) / len(valid_hr), 1)
                         except Exception as hr_err:
                             _LOGGER.debug("Error decoding data_hr: %s", hr_err)
+
+                # Sleep analysis: inspect most recent recorded sleep session (today or yesterday)
+                for item in reversed(band_items):
+                    if result["sleep_score"] is not None:
+                        break
+                    summary_raw = item.get("summary")
+                    if summary_raw:
+                        summary = decode_band_summary(summary_raw)
+                        if summary and "slp" in summary:
+                            slp = summary["slp"]
+                            result["sleep_score"] = slp.get("ss")
+                            dp = slp.get("dp", 0)
+                            lt = slp.get("lt", 0)
+                            dt = slp.get("dt", 0)
+                            result["deep_sleep"] = dp
+                            result["light_sleep"] = lt
+                            result["rem_sleep"] = dt
+                            result["awake_time"] = slp.get("wk")
+                            result["wake_count"] = slp.get("wc")
+                            result["sleep_duration"] = dp + lt + dt
+                            result["sleep_rhr"] = slp.get("rhr")
+                            if result["sleep_rhr"] and result["resting_hr"] is None:
+                                result["resting_hr"] = result["sleep_rhr"]
 
             # 2. Stress
             stress_events = await async_fetch_user_events(

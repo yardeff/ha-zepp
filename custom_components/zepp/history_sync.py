@@ -1,6 +1,7 @@
 """Historical data synchronization for Zepp (Amazfit) into Home Assistant."""
 from __future__ import annotations
 
+import asyncio
 import base64
 import datetime
 import logging
@@ -10,6 +11,7 @@ from homeassistant.components.recorder.models import StatisticData, StatisticMet
 from homeassistant.components.recorder.statistics import async_import_statistics
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from homeassistant.util import dt as dt_util
 
 from .api import (
     ZeppAuthError,
@@ -37,7 +39,7 @@ async def async_sync_historical_data(
     device_id_clean = str(device_id).lower().replace(":", "")
     device_name = devices[0]["device_name"] if devices else "Amazfit"
 
-    now = datetime.datetime.now()
+    now = dt_util.now()
     start_date = now - datetime.timedelta(days=days)
 
     _LOGGER.info("Starting Zepp history sync for %s days (%s to %s)", days, start_date.strftime("%Y-%m-%d"), now.strftime("%Y-%m-%d"))
@@ -80,6 +82,7 @@ async def async_sync_historical_data(
             _LOGGER.warning("Error fetching Zepp history chunk %s..%s: %s", from_str, to_str, err)
 
         cursor = chunk_end + datetime.timedelta(days=1)
+        await asyncio.sleep(0.35)
 
     # 2. Fetch Stress Events
     stress_by_day: dict[str, dict[str, float]] = {}

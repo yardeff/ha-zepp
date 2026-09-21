@@ -362,8 +362,12 @@ async def async_discover_zepp_devices(
     for host in candidate_hosts:
         raw_devices = await async_fetch_devices(session, apptoken, userid, host)
         if raw_devices:
+            # Filter for actively bound devices (bindingStatus == 1) to ignore historical unlinked wearables
+            active_devices = [d for d in raw_devices if d.get("bindingStatus", 1) == 1]
+            devices_to_parse = active_devices if active_devices else raw_devices
+
             parsed_devices = []
-            for dev in raw_devices:
+            for dev in devices_to_parse:
                 src = dev.get("deviceSource")
                 disp = dev.get("displayName")
                 info_name = dev.get("deviceInfo", {}).get("name") or dev.get("deviceSourceText")
