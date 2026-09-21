@@ -24,6 +24,16 @@
           "token_or_url": "Browser Cookies or Token",
           "country_code": "Account Region / Country"
         }
+      },
+      "reauth_confirm": {
+        "title": "Re-authenticate Zepp",
+        "description": "Your Zepp session for {account} has expired or requires updated credentials.\nPlease provide your current password or updated browser cookies below.",
+        "data": {
+          "email": "Email Address",
+          "password": "Password",
+          "token_or_url": "Browser Cookies or Token",
+          "country_code": "Account Region / Country"
+        }
       }
     },
     "error": {
@@ -34,6 +44,7 @@
     },
     "abort": {
       "already_configured": "This Zepp account is already configured.",
+      "reauth_successful": "Re-authentication was successful.",
       "unknown": "Unexpected authentication error."
     }
   }

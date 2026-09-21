@@ -1,6 +1,7 @@
 """Config flow for Zepp (Amazfit) integration."""
 from __future__ import annotations
 
+from collections.abc import Mapping
 import logging
 from typing import Any
 import voluptuous as vol
@@ -121,7 +122,9 @@ class ZeppConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 _LOGGER.exception("Unexpected exception during Zepp login")
                 errors["base"] = "unknown"
             else:
-                return await self._async_create_zepp_entry(session, auth_data, email=email)
+                return await self._async_create_zepp_entry(
+                    session, auth_data, email=email, password=password, country_code=country_code
+                )
 
         schema = vol.Schema(
             {
@@ -160,7 +163,9 @@ class ZeppConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 _LOGGER.exception("Unexpected exception during Zepp token login")
                 errors["base"] = "unknown"
             else:
-                return await self._async_create_zepp_entry(session, auth_data, email="Token Account")
+                return await self._async_create_zepp_entry(
+                    session, auth_data, email="Token Account", country_code=country_code
+                )
 
         schema = vol.Schema(
             {
@@ -175,11 +180,96 @@ class ZeppConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             errors=errors,
         )
 
+    async def async_step_reauth(
+        self, entry_data: Mapping[str, Any]
+    ) -> FlowResult:
+        """Handle re-authentication upon token expiry."""
+        return await self.async_step_reauth_confirm()
+
+    async def async_step_reauth_confirm(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Handle re-authentication confirmation dialog."""
+        errors: dict[str, str] = {}
+        reauth_entry = self._get_reauth_entry()
+        is_password = bool(reauth_entry.data.get(CONF_PASSWORD))
+
+        if user_input is not None:
+            session = async_get_clientsession(self.hass)
+            try:
+                if is_password:
+                    email = user_input.get(CONF_EMAIL, reauth_entry.data.get(CONF_EMAIL, "")).strip()
+                    password = user_input[CONF_PASSWORD]
+                    country_code = user_input.get(CONF_COUNTRY_CODE, reauth_entry.data.get(CONF_COUNTRY_CODE, "AUTO")).strip().upper()
+                    auth_data = await async_login_web(
+                        session, email, password, country_code=country_code
+                    )
+                    new_data = {
+                        **reauth_entry.data,
+                        CONF_EMAIL: email,
+                        CONF_PASSWORD: password,
+                        CONF_COUNTRY_CODE: country_code,
+                        CONF_APPTOKEN: auth_data["apptoken"],
+                        CONF_USERID: auth_data["userid"],
+                    }
+                    if auth_data.get("cname"):
+                        new_data[CONF_CNAME] = auth_data["cname"]
+                else:
+                    raw_input = user_input[CONF_TOKEN_OR_URL].strip()
+                    country_code = user_input.get(CONF_COUNTRY_CODE, reauth_entry.data.get(CONF_COUNTRY_CODE, "AUTO")).strip().upper()
+                    auth_data = await async_exchange_access_token(
+                        session, raw_input, country_code=country_code
+                    )
+                    new_data = {
+                        **reauth_entry.data,
+                        CONF_COUNTRY_CODE: country_code,
+                        CONF_APPTOKEN: auth_data["apptoken"],
+                        CONF_USERID: auth_data["userid"],
+                    }
+                    if auth_data.get("cname"):
+                        new_data[CONF_CNAME] = auth_data["cname"]
+
+                return self.async_update_reload_and_abort(
+                    reauth_entry, data=new_data
+                )
+            except ZeppAuthError:
+                errors["base"] = "invalid_auth"
+            except ZeppConnectionError:
+                errors["base"] = "cannot_connect"
+            except Exception:
+                _LOGGER.exception("Unexpected exception during Zepp reauth")
+                errors["base"] = "unknown"
+
+        if is_password:
+            schema = vol.Schema(
+                {
+                    vol.Required(CONF_EMAIL, default=reauth_entry.data.get(CONF_EMAIL, "")): str,
+                    vol.Required(CONF_PASSWORD): str,
+                    vol.Optional(CONF_COUNTRY_CODE, default=reauth_entry.data.get(CONF_COUNTRY_CODE, "AUTO")): COUNTRY_SELECTOR,
+                }
+            )
+        else:
+            schema = vol.Schema(
+                {
+                    vol.Required(CONF_TOKEN_OR_URL): str,
+                    vol.Optional(CONF_COUNTRY_CODE, default=reauth_entry.data.get(CONF_COUNTRY_CODE, "AUTO")): COUNTRY_SELECTOR,
+                }
+            )
+
+        return self.async_show_form(
+            step_id="reauth_confirm",
+            data_schema=schema,
+            description_placeholders={"account": reauth_entry.title},
+            errors=errors,
+        )
+
     async def _async_create_zepp_entry(
         self,
         session: Any,
         auth_data: dict[str, Any],
         email: str,
+        password: str | None = None,
+        country_code: str | None = None,
     ) -> FlowResult:
         """Complete authentication and create config entry."""
         userid = auth_data["userid"]
@@ -199,14 +289,20 @@ class ZeppConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         else:
             title = f"Zepp ({email})"
 
+        entry_data: dict[str, Any] = {
+            CONF_EMAIL: email,
+            CONF_APPTOKEN: apptoken,
+            CONF_USERID: userid,
+            CONF_CNAME: cname,
+            CONF_REGION_HOST: region_host,
+            "devices": devices,
+        }
+        if password:
+            entry_data[CONF_PASSWORD] = password
+        if country_code:
+            entry_data[CONF_COUNTRY_CODE] = country_code
+
         return self.async_create_entry(
             title=title,
-            data={
-                CONF_EMAIL: email,
-                CONF_APPTOKEN: apptoken,
-                CONF_USERID: userid,
-                CONF_CNAME: cname,
-                CONF_REGION_HOST: region_host,
-                "devices": devices,
-            },
+            data=entry_data,
         )

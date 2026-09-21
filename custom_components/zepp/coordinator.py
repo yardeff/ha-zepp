@@ -5,19 +5,32 @@ import datetime
 import logging
 from typing import Any
 
+from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .api import (
+    ZeppAuthError,
     async_fetch_band_data,
     async_fetch_sport_load,
     async_fetch_user_events,
     async_fetch_v2_events,
     async_fetch_weight_records,
+    async_login_web,
     decode_band_summary,
 )
-from .const import CONF_APPTOKEN, CONF_REGION_HOST, CONF_USERID, DOMAIN
+from .const import (
+    CONF_APPTOKEN,
+    CONF_CNAME,
+    CONF_COUNTRY_CODE,
+    CONF_EMAIL,
+    CONF_PASSWORD,
+    CONF_REGION_HOST,
+    CONF_USERID,
+    DOMAIN,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -27,20 +40,55 @@ SCAN_INTERVAL = datetime.timedelta(minutes=15)
 class ZeppCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     """Coordinator to fetch all current metrics from Zepp cloud."""
 
-    def __init__(self, hass: HomeAssistant, entry_data: dict[str, Any]) -> None:
+    def __init__(self, hass: HomeAssistant, entry: ConfigEntry | dict[str, Any]) -> None:
         super().__init__(
             hass,
             _LOGGER,
             name=DOMAIN,
             update_interval=SCAN_INTERVAL,
         )
-        self.entry_data = entry_data
-        self.apptoken: str = entry_data[CONF_APPTOKEN]
-        self.userid: str = str(entry_data[CONF_USERID])
-        self.host: str = entry_data[CONF_REGION_HOST]
-        self.devices: list[dict[str, Any]] = entry_data.get("devices", [])
+        if isinstance(entry, ConfigEntry):
+            self.entry: ConfigEntry | None = entry
+            self.entry_data = entry.data
+        else:
+            self.entry = None
+            self.entry_data = entry
 
-    async def _async_update_data(self) -> dict[str, Any]:
+        self.apptoken: str = self.entry_data[CONF_APPTOKEN]
+        self.userid: str = str(self.entry_data[CONF_USERID])
+        self.host: str = self.entry_data[CONF_REGION_HOST]
+        self.devices: list[dict[str, Any]] = self.entry_data.get("devices", [])
+
+    async def _async_refresh_token(self) -> bool:
+        """Attempt to re-authenticate using stored credentials."""
+        if not self.entry:
+            return False
+
+        password = self.entry.data.get(CONF_PASSWORD)
+        email = self.entry.data.get(CONF_EMAIL)
+        country_code = self.entry.data.get(CONF_COUNTRY_CODE, "AUTO")
+
+        if not password or not email:
+            return False
+
+        _LOGGER.info("Zepp token expired, attempting automatic re-authentication for %s", email)
+        session = async_get_clientsession(self.hass)
+        try:
+            auth_data = await async_login_web(session, email, password, country_code=country_code)
+            new_token = auth_data["apptoken"]
+            self.apptoken = new_token
+            new_data = {**self.entry.data, CONF_APPTOKEN: new_token}
+            if auth_data.get("cname"):
+                new_data[CONF_CNAME] = auth_data["cname"]
+            self.hass.config_entries.async_update_entry(self.entry, data=new_data)
+            self.entry_data = new_data
+            _LOGGER.info("Successfully refreshed Zepp token for %s", email)
+            return True
+        except Exception as err:
+            _LOGGER.warning("Automatic re-authentication failed for %s: %s", email, err)
+            return False
+
+    async def _fetch_metrics(self) -> dict[str, Any]:
         """Fetch real-time and daily data from Zepp API."""
         session = async_get_clientsession(self.hass)
         now = datetime.datetime.now()
@@ -239,8 +287,25 @@ class ZeppCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 result["body_water"] = latest_w.get("body_water_rate")
                 result["bone_mass"] = latest_w.get("bone_mass")
 
+        except ZeppAuthError:
+            raise
+        except Exception as err:
+            _LOGGER.debug("Error updating Zepp metrics: %s", err)
+
+        return result
+
+    async def _async_update_data(self) -> dict[str, Any]:
+        """Fetch data from Zepp API with automatic retry and token refresh on auth errors."""
+        try:
+            return await self._fetch_metrics()
+        except ZeppAuthError as auth_err:
+            refreshed = await self._async_refresh_token()
+            if refreshed:
+                try:
+                    return await self._fetch_metrics()
+                except Exception as err:
+                    raise UpdateFailed(f"Error after re-authenticating with Zepp: {err}") from err
+            raise ConfigEntryAuthFailed("Zepp authentication expired or invalid") from auth_err
         except Exception as err:
             _LOGGER.exception("Error updating Zepp coordinator: %s", err)
             raise UpdateFailed(f"Error communicating with Zepp cloud: {err}") from err
-
-        return result

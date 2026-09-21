@@ -434,7 +434,12 @@ async def async_fetch_band_data(
             if resp.status == 200:
                 data = await resp.json()
                 return data.get("data", [])
+            elif resp.status == 401:
+                _LOGGER.warning("Zepp API returned 401 Unauthorized for band data. Token may be expired.")
+                raise ZeppAuthError("Zepp token expired (HTTP 401)")
             _LOGGER.debug("Band data request failed: HTTP %s", resp.status)
+    except ZeppAuthError:
+        raise
     except Exception as err:
         _LOGGER.warning("Error fetching band data from Zepp: %s", err)
 
@@ -472,6 +477,11 @@ async def async_fetch_user_events(
             if resp.status == 200:
                 data = await resp.json()
                 return data.get("items", [])
+            elif resp.status == 401:
+                _LOGGER.warning("Zepp API returned 401 Unauthorized for user events (%s). Token may be expired.", event_type)
+                raise ZeppAuthError("Zepp token expired (HTTP 401)")
+    except ZeppAuthError:
+        raise
     except Exception as err:
         _LOGGER.debug("Error fetching user events (%s): %s", event_type, err)
 
@@ -507,6 +517,11 @@ async def async_fetch_v2_events(
             if resp.status == 200:
                 data = await resp.json()
                 return data.get("items", [])
+            elif resp.status == 401:
+                _LOGGER.warning("Zepp API returned 401 Unauthorized for v2 events (%s). Token may be expired.", event_type)
+                raise ZeppAuthError("Zepp token expired (HTTP 401)")
+    except ZeppAuthError:
+        raise
     except Exception as err:
         _LOGGER.debug("Error fetching v2 events (%s): %s", event_type, err)
 
@@ -536,6 +551,11 @@ async def async_fetch_sport_load(
             if resp.status == 200:
                 data = await resp.json()
                 return data.get("items", [])
+            elif resp.status == 401:
+                _LOGGER.warning("Zepp API returned 401 Unauthorized for sport load. Token may be expired.")
+                raise ZeppAuthError("Zepp token expired (HTTP 401)")
+    except ZeppAuthError:
+        raise
     except Exception as err:
         _LOGGER.debug("Error fetching sport load: %s", err)
 
@@ -569,6 +589,11 @@ async def async_fetch_weight_records(
             if resp.status == 200:
                 data = await resp.json()
                 return data.get("items", [])
+            elif resp.status == 401:
+                _LOGGER.warning("Zepp API returned 401 Unauthorized for weight records. Token may be expired.")
+                raise ZeppAuthError("Zepp token expired (HTTP 401)")
+    except ZeppAuthError:
+        raise
     except Exception as err:
         _LOGGER.debug("Error fetching weight records: %s", err)
 

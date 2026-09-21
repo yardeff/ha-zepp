@@ -26,7 +26,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Zepp from a config entry."""
     hass.data.setdefault(DOMAIN, {})
 
-    coordinator = ZeppCoordinator(hass, entry.data)
+    coordinator = ZeppCoordinator(hass, entry)
     await coordinator.async_config_entry_first_refresh()
 
     hass.data[DOMAIN][entry.entry_id] = {

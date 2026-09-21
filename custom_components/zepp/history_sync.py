@@ -11,7 +11,12 @@ from homeassistant.components.recorder.statistics import async_import_statistics
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
-from .api import async_fetch_band_data, async_fetch_user_events, decode_band_summary
+from .api import (
+    ZeppAuthError,
+    async_fetch_band_data,
+    async_fetch_user_events,
+    decode_band_summary,
+)
 from .const import CONF_APPTOKEN, CONF_REGION_HOST, CONF_USERID, DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
@@ -68,6 +73,9 @@ async def async_sync_historical_data(
                         raw_hr_by_day[d_str] = base64.b64decode(d_hr)
                     except Exception:
                         pass
+        except ZeppAuthError:
+            _LOGGER.warning("Zepp authentication expired during history sync. Aborting historical backfill.")
+            break
         except Exception as err:
             _LOGGER.warning("Error fetching Zepp history chunk %s..%s: %s", from_str, to_str, err)
 
