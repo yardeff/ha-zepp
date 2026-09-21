@@ -1,9 +1,6 @@
 # Zepp (Amazfit) for Home Assistant
 
-[![HACS Custom](https://img.shields.io/badge/HACS-Custom-blue.svg?style=flat-square)](https://github.com/hacs/default)
-[![Home Assistant](https://img.shields.io/badge/Home%20Assistant-2024.1.0%2B-blue.svg?style=flat-square)](https://www.home-assistant.io)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square)](LICENSE)
-[![Maintenance](https://img.shields.io/badge/Maintained%3F-Yes-green.svg?style=flat-square)](https://github.com/yardeff/ha-zepp)
+[English](README.md) | [Русский](README.ru.md)
 
 Production-grade Home Assistant custom integration connecting **Zepp and Amazfit smartwatches and fitness bands** through official cloud APIs.
 
