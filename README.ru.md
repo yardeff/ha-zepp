@@ -2,7 +2,7 @@
 
 [English](README.md) | [Русский](README.ru.md)
 
-[![Telegram](https://img.shields.io/badge/Telegram-Канал-2CA5E0?style=flat&logo=telegram&logoColor=white)](https://t.me/yardev_code)
+Следите за новостями и обновлениями в Telegram: [@yardev_code](https://t.me/yardev_code)
 
 Интеграция для подключения **умных часов и фитнес-браслетов Amazfit / Zepp** к Home Assistant через официальное облако Zepp.
 

@@ -2,7 +2,7 @@
 
 [English](README.md) | [Русский](README.ru.md)
 
-[![Telegram](https://img.shields.io/badge/Telegram-Channel-2CA5E0?style=flat&logo=telegram&logoColor=white)](https://t.me/yardev_code)
+Follow news and updates in Telegram: [@yardev_code](https://t.me/yardev_code)
 
 Home Assistant integration for connecting **Amazfit and Zepp smartwatches and fitness bands** using the official Zepp cloud APIs.
 
