@@ -1,6 +1,6 @@
 # Zepp (Amazfit) для Home Assistant
 
-[English](README.md) | [Русский](README.ru.md) | [Telegram](https://t.me/yardev_code)
+[English](README.md) | [Русский](README.ru.md)
 
 [![Telegram](https://img.shields.io/badge/Telegram-Канал-2CA5E0?style=flat&logo=telegram&logoColor=white)](https://t.me/yardev_code)
 
