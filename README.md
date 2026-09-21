@@ -38,10 +38,12 @@ Syncs daily activity, heart rate, sleep stages, stress, SpO2, workout load, and 
 | Sensor | Entity ID Suffix | Device Class | Unit | Description |
 | :--- | :--- | :--- | :--- | :--- |
 | **Watch Model** | `_model` | — | String | Device model and technical parameters |
-| **Battery Level** | `_battery` | `battery` | `%` | Current battery percentage |
 | **MAC Address** | `_mac` | — | String | Bluetooth MAC address |
 | **Firmware Version**| `_firmware` | — | String | Installed firmware version |
 | **Serial Number** | `_serial` | — | String | Hardware serial number |
+
+> **Note on Battery Level:**  
+> On modern Amazfit watches running Zepp OS (Active, Balance, Cheetah, T-Rex 3, etc.), battery percentage is communicated strictly over local Bluetooth Low Energy (BLE) to the official smartphone app. The Zepp cloud REST API does not receive or store battery percentage for these watches. An empty `Unknown` battery entity is deliberately omitted to keep the dashboard clean. For local real-time battery tracking in Home Assistant, use the provided `auth_key` attribute with the native Bluetooth or ESPHome BLE integration.
 
 <details>
 <summary><b>Advanced Attributes & BLE Authentication Key</b></summary>
@@ -99,6 +101,7 @@ Syncs daily activity, heart rate, sleep stages, stress, SpO2, workout load, and 
 | **Breathing Quality** | `_breathing_score` | `measurement` | score | Sleep breathing quality score |
 | **PAI** | `_pai` | `measurement` | PAI | 7-day rolling Personal Activity Intelligence score |
 | **Heart Rate Variability (HRV)** | `_hrv` | `measurement` | ms | Heart rate variability (rMSSD) |
+| **Readiness Score** | `_readiness_score` | `measurement` | score | Morning physical and mental recovery score |
 
 ### 5. Workout Training Load
 
