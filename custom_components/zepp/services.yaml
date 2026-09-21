@@ -1,0 +1,14 @@
+sync_history:
+  name: Синхронизировать историю
+  description: Загрузить исторические данные (шаги, калории, сон) из облака Zepp в долгосрочную статистику Home Assistant.
+  fields:
+    days:
+      name: Количество дней
+      description: За сколько дней в прошлом выгрузить историю (например, 30, 90, 365 или 1825 для 5 лет).
+      default: 90
+      selector:
+        number:
+          min: 1
+          max: 7300
+          unit_of_measurement: дней
+          mode: box

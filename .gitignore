@@ -1,0 +1,18 @@
+# Dev / reference folders
+ZeppBridge/
+*.tar.gz
+zepp_session.json
+server_test.py
+test_login.py
+
+# Byte-compiled / cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# OS / Editor
+.DS_Store
+Thumbs.db
+*.log
+.idea/
+.vscode/

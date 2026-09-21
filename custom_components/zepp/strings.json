@@ -1,0 +1,40 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connect Zepp (Amazfit)",
+        "description": "### Choose your sign-in method:\n\n**1. Email & Password (Direct Zepp Account)**\n* Choose this if you registered in Zepp using your email address and password.\n* Fast 1-step login. Your mobile Zepp app **remains logged in** without being kicked out.\n* ⚠️ *If you tap 'Sign in with Google, Apple, or Mi' on your phone, you don't have a direct Zepp password — use Method 2 below.*\n\n**2. Browser Cookies / Web Token (For Google, Apple, Mi, or Social Logins)**\n* Choose this if your Zepp account is linked to **Google**, **Apple ID**, **Mi Account**, or social providers.\n* Log in securely on the official Zepp portal in your browser, copy your cookies, and paste here.\n* 100% safe — your Google/Apple passwords are never exposed to Home Assistant, and your mobile app stays connected!",
+        "data": {
+          "auth_method": "Sign-in Method"
+        }
+      },
+      "password": {
+        "title": "Email & Password Login",
+        "description": "Enter your direct Zepp account credentials. This connects via an isolated web session, so your mobile app remains active.",
+        "data": {
+          "email": "Email Address",
+          "password": "Password",
+          "country_code": "Account Region / Country"
+        }
+      },
+      "token": {
+        "title": "Login with Browser Cookies (Google / Apple / Mi)",
+        "description": "### ⚠️ INSTRUCTIONS FOR GOOGLE / APPLE / MI / SOCIAL LOGIN:\n\n1. **[CLICK HERE TO OPEN THE ZEPP LOGIN PAGE](https://user.zepp.com/universalLogin/index.html#/login?project_name=watchface&project_redirect_uri=https%3A%2F%2Fwatchface.zepp.com%2Fcreate&platform_app=com.huami.webapp&specify_lang=en)** *(open in a new browser tab)*.\n2. Sign in using your **Google**, **Apple**, **Mi**, or email account.\n3. ⚠️ **AFTER LOGGING IN, YOU WILL BE REDIRECTED TO THE WATCHFACE CREATOR PAGE — DO NOT WORRY, THIS IS COMPLETELY NORMAL!**\n4. On that page, press **F12** (or `Ctrl + Shift + I`) and switch to the **Console** tab.\n   *(If your browser blocks pasting with a security warning, first type `allow pasting` and press Enter)*.\n5. Paste this command into the console and press Enter:\n   ```javascript\n   copy(document.cookie); console.log(\"%c COPIED TO CLIPBOARD! Press Ctrl+V in Home Assistant: \", \"background: #22c55e; color: #fff; font-size: 14px; font-weight: bold; padding: 4px;\"); console.log(document.cookie);\n   ```\n6. The data is now automatically copied to your clipboard! Return here and press **Ctrl+V** in the field below.",
+        "data": {
+          "token_or_url": "Browser Cookies or Token",
+          "country_code": "Account Region / Country"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Failed to connect to Zepp servers",
+      "invalid_auth": "Invalid credentials or expired token. Please check and try again.",
+      "invalid_token": "Could not find valid credentials in the provided text. Please copy the full document.cookie string from the browser.",
+      "unknown": "An unexpected error occurred"
+    },
+    "abort": {
+      "already_configured": "This Zepp account is already configured.",
+      "unknown": "Unexpected authentication error."
+    }
+  }
+}

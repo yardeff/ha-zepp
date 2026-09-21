@@ -1,0 +1,11 @@
+{
+  "domain": "zepp",
+  "name": "Zepp (Amazfit)",
+  "codeowners": ["@yarchefis"],
+  "config_flow": true,
+  "documentation": "https://github.com/yarchefis/ha-zepp",
+  "dependencies": ["http", "recorder"],
+  "iot_class": "cloud_polling",
+  "issue_tracker": "https://github.com/yarchefis/ha-zepp/issues",
+  "version": "1.0.0"
+}
