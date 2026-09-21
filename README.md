@@ -33,6 +33,24 @@ Syncs daily activity, heart rate, sleep stages, stress, SpO2, workout load, and 
 
 ---
 
+## Architecture: Cloud-First vs On-Watch Apps
+
+Unlike solutions that require installing third-party JavaScript apps on your watch to push data via local webhooks, **ha-zepp** works directly through the official cloud:
+
+1. Your watch syncs with the official Zepp mobile app over Bluetooth, and the app uploads your data to the Zepp cloud as usual.
+2. Home Assistant makes direct HTTPS REST requests to the Zepp cloud to fetch all your health, sleep, and activity metrics. The watch runs no extra software and does not interact with Home Assistant directly.
+
+### Why this approach?
+* **Zero Watch Battery Drain:** No background scripts or continuous Bluetooth transmissions on your watch. Battery life remains completely native (days or weeks).
+* **Zero Software on the Watch:** Nothing to install, configure, or keep running on the watch itself.
+* **100% Free & Open Source:** Licensed under MIT. No paid watch-store mini-apps, no in-app purchases, no subscriptions.
+* **Direct HTTPS Calls:** Home Assistant talks directly to official Zepp Cloud endpoints (`api-mifit`). No phone companion apps, bridge daemons, or local servers required.
+* **1-Year LTS History Backfill:** Pulls up to 365 days of historical activity and sleep records into Home Assistant Long-Term Statistics on day one.
+* **Works Everywhere:** No need to expose Home Assistant webhooks to the internet or configure port forwarding when you leave your home WiFi.
+* **Universal Compatibility:** Works with any device supported by the official Zepp app, including older Amazfit models and fitness bands that do not have an on-watch App Store.
+
+---
+
 ## Sensors & Entities
 
 ### 1. Device Information
