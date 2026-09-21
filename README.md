@@ -211,14 +211,41 @@ data:
 
 ---
 
-## Diagnostics
+## Polling Interval & Custom Timer
 
-If something isn't working as expected:
+By default, the integration fetches fresh metrics from the Zepp cloud every **15 minutes**. This provides an optimal balance between up-to-date health statistics and preventing cloud rate-limiting.
+
+If your automations require more frequent updates (e.g. during an active day) or less frequent requests:
+
+1. Navigate to **Settings -> Devices & Services -> Zepp (Amazfit)**.
+2. Click the **Configure** button (gear icon) on the integration card.
+3. Select your preferred polling frequency from the dropdown:
+   * `5 minutes` — for high-frequency activity and heart rate tracking.
+   * `10 minutes` — accelerated polling.
+   * `15 minutes (Default)` — recommended baseline balance.
+   * `30 minutes` — conservative polling.
+   * `60 minutes` — hourly updates.
+4. Click **Submit**. The new polling schedule takes effect immediately on the fly without needing to restart Home Assistant.
+
+---
+
+## Diagnostics & Log Capture
+
+The integration includes a built-in diagnostic subsystem fully integrated with Home Assistant standards:
+
+* **In-Memory Ring Buffer:** A dedicated handler (`ZeppLogCaptureHandler`) continuously retains the last 100 internal log events of `custom_components.zepp` directly in memory.
+* **Diagnostics Report Contents (JSON):**
+  * `recent_logs` — chronological trace of API requests, cluster discovery responses, and background tasks.
+  * `system_status` — integration version, active cloud cluster (`region_host`), polling interval, timestamp, and health status of the latest sync.
+  * `metrics_health` — table of sensor availability (indicates which sensors provide valid values and which are not supported by the current watch model).
+  * `devices` — list of discovered watch models, firmware revisions, and hardware IDs.
+* **Privacy & Secret Redaction:** All authentication tokens (`apptoken`), passwords, email addresses, Bluetooth MAC addresses, and encryption keys (`auth_key`) are automatically sanitized with `[REDACTED]` placeholders.
+
+### How to Download Diagnostics:
 
 1. Go to **Settings -> Devices & Services -> Zepp (Amazfit)**.
-2. Click the three dots on the integration card and select **Download diagnostics**.
-3. Passwords, tokens, email addresses, and MAC addresses are automatically scrubbed (`**REDACTED**`).
-4. Attach the downloaded JSON file to your issue on [GitHub Issues](https://github.com/yardeff/ha-zepp/issues).
+2. Click the three dots menu on the integration card and select **Download diagnostics**.
+3. Attach the downloaded JSON file to your report on [GitHub Issues](https://github.com/yardeff/ha-zepp/issues) — it provides the exact context needed to diagnose issues without exposing your private credentials.
 
 ---
 
@@ -233,15 +260,11 @@ If something isn't working as expected:
 </details>
 
 <details>
-<summary><b>Why do sensors update every 15 minutes instead of instantly?</b></summary>
+<summary><b>Why don't sensors update immediately?</b></summary>
 
-> Your watch sends data to your phone over Bluetooth, and your phone periodically uploads it to the Zepp cloud. The watch has no direct Wi-Fi connection to Home Assistant.
+> The watch communicates with your smartphone over Bluetooth, and the official Zepp mobile app periodically syncs that data to the cloud. Most wearables do not possess a direct Wi-Fi radio connection to Home Assistant.
 >
-> Polling the cloud more often than every 15 minutes is unnecessary because new data only appears after the phone syncs with the watch. Making requests too frequently can also get your IP blocked by Zepp servers.
->
-> To update data right away:
-> 1. Open the Zepp app on your phone and pull down on the home screen to sync with the watch.
-> 2. In Home Assistant, press the **Sync Now** button (`_sync_now`).
+> Cloud data is updated as soon as the watch syncs with your phone. If you need quicker updates in Home Assistant, you can reduce the polling interval down to 5 minutes via the **Configure** menu, or press the **Sync Now** button (`_sync_now`) after swiping down on the Zepp mobile app home screen.
 </details>
 
 <details>
