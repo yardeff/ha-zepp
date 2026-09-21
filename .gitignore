@@ -1,5 +1,3 @@
-# Dev / reference folders
-ZeppBridge/
 *.tar.gz
 zepp_session.json
 server_test.py
