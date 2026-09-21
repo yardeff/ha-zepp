@@ -1,14 +1,14 @@
 # Zepp for Home Assistant
 
-Custom integration connecting Zepp and Amazfit smartwatches, fitness bands, and smart scales to Home Assistant via official cloud APIs.
+Custom integration connecting Zepp and Amazfit smartwatches and fitness bands to Home Assistant via official cloud APIs.
 
-Compatible with all wearable devices connected through the official **Zepp** mobile application (not Zepp Life or Mi Fitness).
+Compatible with all smartwatch and band models synced through the official **Zepp** mobile application (not Zepp Life or Mi Fitness).
 
 ---
 
 ## Overview
 
-The integration provides real-time health telemetry, athletic load analysis, body composition metrics, and full historical statistics backfilling into Home Assistant. 
+The integration provides real-time health telemetry, athletic load analysis, sleep stage tracking, and full historical statistics backfilling into Home Assistant.
 
 ### Key Technical Characteristics
 
@@ -17,7 +17,7 @@ The integration provides real-time health telemetry, athletic load analysis, bod
   - Direct account authentication via email and password with fully automatic background token renewal.
   - Federated sign-in (Google, Apple ID, Xiaomi Account) via browser session tokens, backed by Home Assistant's native re-authentication framework.
 - **Long-Term Statistics (LTS) Integration:** Native support for the Home Assistant Recorder statistics engine. Historical data is backfilled into long-term tables for multi-year trend analysis without bloating daily state history.
-- **High-Density Sensor Suite:** Real-time biometrics, detailed sleep stage breakdowns, cardiovascular statistics, training load, and scale body composition.
+- **High-Density Sensor Suite:** Real-time biometrics, detailed sleep stage breakdowns, cardiovascular statistics, and training load.
 
 ---
 
@@ -66,15 +66,7 @@ The integration dynamically generates entities based on the hardware and feature
 | Training Load (7-Day) | `_training_load` | `measurement` | None | `optimal_min`, `optimal_max` |
 | Daily Training Load | `_training_load_today` | `measurement` | None | Training stress accumulated during current day |
 
-### 5. Body Composition and Scale Metrics
-
-| Sensor | Entity Suffix | State Class | Unit | Description |
-| :--- | :--- | :--- | :--- | :--- |
-| Weight | `_weight` | `measurement` | kg | Most recent measured body mass |
-| BMI | `_bmi` | `measurement` | None | Body Mass Index calculated from height/weight |
-| Body Fat | `_body_fat` | `measurement` | % | Estimated body fat percentage from impedance |
-
-### 6. Hardware Metadata and Diagnostics
+### 5. Hardware Metadata and Diagnostics
 
 | Sensor | Entity Suffix | Extra Attributes |
 | :--- | :--- | :--- |
@@ -87,45 +79,22 @@ The integration dynamically generates entities based on the hardware and feature
 
 ## System Architecture
 
-```
-                  +-------------------------------+
-                  |       Zepp Cloud APIs         |
-                  |  (US / EU / RU / SG Clusters) |
-                  +---------------+---------------+
-                                  |
-                HTTPS / TLS 1.3   | JSON & Base64 Telemetry
-                                  v
-+-----------------------------------------------------------------+
-|                   Home Assistant Core                           |
-|                                                                 |
-|   +---------------------------------------------------------+   |
-|   |                  Zepp Coordinator                       |   |
-|   |  - 15-Minute Scheduled Polling Loop                     |   |
-|   |  - Token Refresh Lifecycle (Password Auto-Renew)        |   |
-|   |  - Native Reauth Handler (Federated Cookies)            |   |
-|   +----------------------------+----------------------------+   |
-|                                |                                |
-|        Live Sensor States      |      Long-Term Statistics      |
-|                v               |               v                |
-|   +------------------------+   |   +------------------------+   |
-|   |   State Machine        |   |   |   Recorder Subsystem   |   |
-|   |   (Current Values)     |   |   |   (LTS History Sync)   |   |
-|   +------------------------+   |   +------------------------+   |
-+-----------------------------------------------------------------+
-```
-
 ### 1. Web Session Isolation
 
-Standard mobile app logins invalidate prior sessions upon new authentication requests. To circumvent this, the integration registers as a secondary web platform (`com.huami.webapp`), acquiring access tokens scoped exclusively to user endpoints. Your primary phone application retains its active Bluetooth connection and background sync routines without interruption.
+Standard mobile app logins invalidate prior sessions upon new authentication requests. To prevent kicking out the mobile app, the integration authenticates under an isolated web platform identifier (`com.huami.webapp`). This allows the mobile Zepp app to maintain its primary Bluetooth connection and background sync routines uninterrupted.
 
-### 2. Regional Discovery and Routing
+### 2. Multi-Regional Cloud Routing
 
-Zepp maintains geographically segregated data clusters (`api-mifit.huami.com`, `api-mifit-ru.huami.com`, `api-mifit-de.huami.com`, `api-mifit-us2.huami.com`, etc.). During onboarding, the integration queries the user profile service, resolves the target cluster host, and caches it in the configuration entry.
+Zepp hosts account data across geographically distributed server clusters (including Global / Worldwide, Europe, Russia & CIS, North America, and Asia-Pacific). During initial setup, the integration queries the user profile service, resolves the target cluster according to account locality, and routes subsequent requests directly to that region.
 
 ### 3. Authentication Lifecycle and Self-Healing
 
-- **Direct Accounts:** Tokens expire periodically. When an API endpoint responds with HTTP 401 (`invalid token`), the coordinator traps the condition, executes an automated login handshake using stored credentials, commits the fresh token to the Home Assistant storage registry, and retries the failed operation.
-- **Federated Accounts (Google / Apple / Mi):** Because third-party SSO providers do not expose raw passwords, session expiration triggers `ConfigEntryAuthFailed`. Home Assistant automatically places the integration into a re-authentication state, allowing the administrator to supply fresh browser cookies via a single prompt.
+- **Direct Accounts:** Tokens expire periodically. When an API endpoint responds with HTTP 401 (`invalid token`), the coordinator catches the error, initiates an automatic re-login handshake using stored credentials, persists the refreshed token in the Home Assistant configuration entry, and retries the data fetch seamlessly.
+- **Federated Accounts (Google / Apple / Mi):** Because external identity providers do not expose raw passwords, session expiration triggers `ConfigEntryAuthFailed`. Home Assistant flags the integration with a native re-authentication prompt, allowing the administrator to paste fresh browser cookies directly.
+
+### 4. Polling Pipeline
+
+The integration updates live sensor states on a standard 15-minute polling interval, retrieving aggregate daily progress, intraday heart rate stream decodings, and latest health events with minimal network overhead.
 
 ---
 
@@ -133,9 +102,9 @@ Zepp maintains geographically segregated data clusters (`api-mifit.huami.com`, `
 
 ### `zepp.sync_history`
 
-Backfills historical sensor metrics directly into Home Assistant's Long-Term Statistics database (`statistics` and `statistics_short_term` tables). 
+Backfills historical sensor metrics directly into Home Assistant's Long-Term Statistics database (`statistics` and `statistics_short_term` tables).
 
-This service allows importing data across arbitrary time horizons without generating massive volumes of transient state change events.
+This service imports past data across arbitrary time horizons without generating massive volumes of transient state change events.
 
 #### Service Data Parameters
 
@@ -179,9 +148,27 @@ data:
 
 ---
 
-## License
+## License & Legal Disclaimers
 
-This project is licensed under the MIT License.
+### License
+
+This project is licensed under the **MIT License**.
 
 Copyright (c) 2026 yardev
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files, to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, subject to the conditions stated in the full [LICENSE](LICENSE) file.
+
+### Disclaimer & Trademarks
+
+- This project is an independent, community-driven open-source development and is **not affiliated, associated, authorized, endorsed by, or in any way officially connected** with Zepp Health Corporation, Amazfit, Anhui Huami Information Technology Co., Ltd., or any of their subsidiaries or affiliates.
+- All product names, logos, trademarks, and registered trademarks (including *Zepp*, *Amazfit*, and *PAI*) are property of their respective owners. Their use in this integration is solely for device identification and technical interoperability purposes.
+
+### Health & Medical Disclaimer
+
+- Health and biometric metrics provided by this integration (including heart rate, $SpO_2$, sleep stages, HRV, and stress levels) are intended **strictly for personal informational and home automation purposes**.
+- This software and its output do not constitute medical advice, diagnosis, or treatment. The data must never be used for clinical decision-making or to replace professional medical consultations.
+
+### Cloud & API Services
+
+This software is provided "as is", without warranty of any kind, express or implied. The author assumes no liability for service interruptions, modifications in third-party API availability, account limitations, or device behavior resulting from the use of this integration.
 
