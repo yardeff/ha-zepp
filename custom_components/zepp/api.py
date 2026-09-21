@@ -489,7 +489,7 @@ async def async_fetch_band_data(
     except ZeppAuthError:
         raise
     except Exception as err:
-        _LOGGER.warning("Error fetching band data from Zepp: %s", err)
+        _LOGGER.warning("Error fetching band data from Zepp: %s", err if str(err) else type(err).__name__)
 
     return []
 
