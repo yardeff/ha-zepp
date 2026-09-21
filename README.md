@@ -4,127 +4,100 @@
 
 Production-grade Home Assistant custom integration connecting **Zepp and Amazfit smartwatches and fitness bands** through official cloud APIs.
 
-Provides real-time biometric telemetry, cardiovascular analytics, sleep architecture stages, training load computation, hardware diagnostics, and full historical Long-Term Statistics (LTS) backfilling.
+Provides real-time biometric telemetry, cardiovascular analytics, sleep architecture stages, athletic load metrics, and historical Long-Term Statistics (LTS) backfilling.
 
 > [!IMPORTANT]
-> **Ecosystem Scope:**
-> This integration exclusively supports smartwatches and fitness bands operating within the official **Zepp** mobile application ecosystem on iOS and Android. Devices operating under legacy Zepp Life (Mi Fit) or Mi Fitness (Xiaomi Wear) accounts communicate with separate cloud infrastructure and are not supported.
+> **Ecosystem Compatibility Scope**  
+> This integration exclusively supports wearable hardware (smartwatches and fitness bands) synchronized through the official **Zepp** mobile application on Android and iOS. Devices managed via Xiaomi / Mi Fitness or legacy Zepp Life (Mi Fit) operate on separate cloud infrastructure and are not supported.
 
 ---
 
-## Architecture Overview
+## Technical Highlights
 
-```
-+---------------------------------------------------------------------------------+
-|                                WEARABLE HARDWARE                                |
-|  Amazfit Smartwatches & Fitness Bands (Balance, Active, T-Rex, GTR, GTS, Bip)   |
-+---------------------------------------------------------------------------------+
-                                        |
-                                        | Bluetooth Low Energy (BLE)
-                                        v
-+---------------------------------------------------------------------------------+
-|                               MOBILE COMPANION                                  |
-|               Official Zepp Application (iOS / Android)                         |
-|               Periodically flushes cached buffers to cloud                      |
-+---------------------------------------------------------------------------------+
-                                        |
-                                        | HTTPS / REST (Isolated Platform Token)
-                                        v
-+---------------------------------------------------------------------------------+
-|                              ZEPP CLOUD CLUSTERS                                |
-|   Geographically Routed: RU (api-mifit-ru), EU (de2), US (us2), SG, CN          |
-+---------------------------------------------------------------------------------+
-                                        |
-                                        | Cloud Polling (15m Interval + Manual Button)
-                                        v
-+---------------------------------------------------------------------------------+
-|                        HOME ASSISTANT CORE INTEGRATION                          |
-|                                                                                 |
-|  [DataUpdateCoordinator]                                                        |
-|    +-- Isolated Metric Exception Handlers (Fault-Tolerant Parsing)              |
-|    +-- Automatic Token Refresh & Reauth Flow Handling                           |
-|    +-- Multi-Device Discovery & Active Wrist Prioritization                     |
-|                                                                                 |
-|  [Entities & Platforms]                                                         |
-|    +-- Sensor Platform: 22+ Continuous & Cumulative Biometric Metrics           |
-|    +-- Button Platform: Instant Manual Synchronization                          |
-|    +-- Diagnostics Platform: Sanitized JSON System State Export                 |
-|    +-- Services Platform: Bulk Historical Recorder LTS Importer                 |
-+---------------------------------------------------------------------------------+
-```
+* **▸ Session Coexistence & Web Isolation**  
+  Authenticates via an isolated web platform identifier (`com.huami.webapp`). The official Zepp mobile app on Android/iOS remains active without session invalidation or forced logouts.
 
----
+* **▸ Dynamic Cluster Binding**  
+  Probes regional cloud endpoints (`api-mifit-ru`, `api-mifit-de2`, `api-mifit-us2`, `api-mifit-sg2`, `api-mifit-cn3`) during discovery and binds communication strictly to the cluster hosting the user's active wearable hardware.
 
-## Key Technical Features
+* **▸ Multi-Device Wrist Prioritization**  
+  Automatically identifies the currently worn device (`activeStatus == 1`) when multiple wearables exist on an account. Each watch is provisioned as an independent Home Assistant device registry entry with isolated entity IDs.
 
-* **Complete Session Isolation:**
-  Authenticates against the official cloud using the dedicated web platform identifier (`com.huami.webapp`). Your primary mobile Zepp app on iOS or Android remains permanently logged in and operates without session eviction or disruption.
+* **▸ Fault-Tolerant Metric Boundaries**  
+  Every biometric category (heart rate, sleep, stress, SpO2, PAI, HRV, athletic load, battery, scale) executes inside an isolated exception boundary. Older or budget models lacking specific sensors (e.g., HRV or continuous stress) continue updating all remaining metrics without coordinator failure.
 
-* **Multi-Cluster Geo-Routing:**
-  Automatically probes all global Zepp and Huami regional endpoints (`api-mifit-ru`, `api-mifit-de2`, `api-mifit-us2`, `api-mifit-sg2`, `api-mifit-cn3`) during discovery and binds communication strictly to the cluster where your wearable hardware is physically registered.
+* **▸ Long-Term Statistics (LTS) Recorder Engine**  
+  Native integration with Home Assistant's statistical database engine. Automatically backfills historical data directly into `statistics` and `statistics_short_term` tables without generating transient state history events.
 
-* **Dual Authentication Methods:**
-  * **Direct Credentials:** Native Email & Password handshake with background token renewal and automated credential persistence.
-  * **Browser Session Extraction:** Seamless support for Google, Apple ID, Xiaomi Account, and federated social logins via browser cookies, supported by Home Assistant's native Reauthentication UI.
-
-* **Active Multi-Device Prioritization:**
-  If multiple wearables are registered to an account (e.g., a daily watch and a rugged outdoor watch), the integration dynamically identifies and prioritizes the currently worn device (`activeStatus == 1`), generating separate hardware-linked device registries without entity ID collisions.
-
-* **Fault-Tolerant Metric Isolation:**
-  Every data stream (heart rate, sleep, stress, SpO2, PAI, HRV, athletic load, battery, scale) is parsed within independent exception boundaries. If a budget or older wearable model lacks specific hardware sensors (such as HRV or continuous stress), other telemetry metrics continue updating without interruption.
-
-* **Long-Term Statistics (LTS) Backfill:**
-  Native integration with the Home Assistant Recorder engine. Imports up to five years of historical metrics directly into database statistics tables (`statistics` and `statistics_short_term`) without generating intermediate state changes.
-
-* **Zero Midnight Statistics Drift:**
-  Step counters enforce strict date boundary isolation (`date_time == today_str`), preventing accumulator corruption or negative delta spikes during midnight resets in Home Assistant Energy and Activity dashboards.
+* **▸ Monotonic Midnight Counter Isolation**  
+  Step accumulation strictly enforces calendar date boundaries (`date_time == today_str`), preventing negative delta spikes or recorder corruption in Home Assistant Energy and Activity dashboards during midnight resets.
 
 ---
 
 ## Entity Catalog
 
-### 1. Device Information & Hardware Metadata
+### 1. Device Hardware & Diagnostics
 
-| Sensor | Entity ID Suffix | Device Class | Unit | Description / Attributes |
+| Sensor | Entity ID Suffix | Device Class | Unit | Description |
 | :--- | :--- | :--- | :--- | :--- |
-| **Watch Model** | `_model` | None | String | Hardware model name. Attributes: `hardware_version`, `product_id`, `auth_key`, `bt_mac`, `region_host`, `user_id` |
-| **Battery Level** | `_battery` | `battery` | `%` | Real-time device battery percentage |
+| **Watch Model** | `_model` | None | String | Hardware model descriptor and platform parameters |
+| **Battery Level** | `_battery` | `battery` | `%` | Real-time wearable battery percentage |
 | **MAC Address** | `_mac` | None | String | Hardware Bluetooth MAC address |
-| **Firmware Version**| `_firmware` | None | String | Installed operating system build version |
-| **Serial Number** | `_serial` | None | String | Factory hardware serial number |
+| **Firmware Version**| `_firmware` | None | String | Operating system build version |
+| **Serial Number** | `_serial` | None | String | Factory serial number |
 
-> [!TIP]
-> **Bluetooth Auth Key for Local Tracking:**
-> The `_model` sensor exposes the device's 32-character AES `auth_key` in its extra state attributes. This key can be used with ESPHome, passive BLE monitors, or BTHome proxies for local presence detection without pairing conflicts.
+<details>
+<summary><b>View Advanced Hardware Attributes & BLE Key Extraction</b></summary>
 
-### 2. Activity & Cumulative Movement
+> The `_model` entity exposes low-level hardware attributes within its state attributes:
+>
+> * `hardware_version` — Component board revision
+> * `product_id` — Numeric model identifier
+> * `auth_key` — 32-character AES Bluetooth authentication key
+> * `bt_mac` — Bluetooth adapter hardware address
+> * `region_host` — Target cloud cluster endpoint
+> * `user_id` — Numeric Zepp cloud account identifier
+>
+> **Local BLE Presence Tracking (ESPHome / BTHome):**  
+> The 32-character `auth_key` can be used directly with ESPHome or passive BLE monitor components to track the watch locally without pairing conflicts:
+>
+> ```yaml
+> # Example: ESPHome BLE Client
+> ble_client:
+>   - mac_address: FF:5C:1D:4D:7A:40
+>     id: amazfit_watch
+> # Use the auth_key attribute from your _model sensor
+> ```
+</details>
+
+### 2. Daily Activity & Cumulative Movement
 
 | Sensor | Entity ID Suffix | State Class | Device Class | Unit | Description |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | **Steps** | `_steps` | `total_increasing` | None | steps | Total steps accumulated today |
-| **Distance** | `_distance` | `total_increasing` | `distance` | m | Total distance traversed today |
+| **Distance** | `_distance` | `total_increasing` | `distance` | m | Cumulative distance traversed today |
 | **Calories** | `_calories` | `total_increasing` | None | kcal | Active metabolic energy expended today |
-| **Step Goal** | `_step_goal` | None | None | steps | User-configured daily step target |
+| **Step Goal** | `_step_goal` | None | None | steps | Configured daily step objective |
 
 ### 3. Sleep Architecture & Respiration
 
-| Sensor | Entity ID Suffix | State Class | Unit | Description / Metrics |
+| Sensor | Entity ID Suffix | State Class | Unit | Description |
 | :--- | :--- | :--- | :--- | :--- |
-| **Sleep Score** | `_sleep_score` | `measurement` | score | Overall algorithmic sleep quality index (0-100) |
-| **Sleep Duration** | `_sleep_duration` | `measurement` | min | Total recorded sleep duration |
-| **Deep Sleep** | `_deep_sleep` | `measurement` | min | Slow-wave Stage 3 sleep duration |
+| **Sleep Score** | `_sleep_score` | `measurement` | score | Algorithmic sleep quality index (0-100) |
+| **Sleep Duration** | `_sleep_duration` | `measurement` | min | Total recorded nocturnal sleep duration |
+| **Deep Sleep** | `_deep_sleep` | `measurement` | min | Stage 3 slow-wave sleep duration |
 | **Light Sleep** | `_light_sleep` | `measurement` | min | Stage 1 and Stage 2 light sleep duration |
-| **REM Sleep** | `_rem_sleep` | `measurement` | min | Rapid Eye Movement stage duration |
-| **Awake Time** | `_awake_time` | `measurement` | min | Duration of nocturnal awake periods |
-| **Wake Count** | `_wake_count` | `measurement` | None | Number of distinct awakening events during sleep |
+| **REM Sleep** | `_rem_sleep` | `measurement` | min | Rapid Eye Movement phase duration |
+| **Awake Time** | `_awake_time` | `measurement` | min | Cumulative nighttime wakefulness duration |
+| **Wake Count** | `_wake_count` | `measurement` | None | Number of discrete awakening events |
 | **Sleep Resting HR**| `_sleep_rhr` | `measurement` | bpm | Basal resting heart rate recorded during sleep |
 
 ### 4. Cardiovascular & Autonomic Biometrics
 
 | Sensor | Entity ID Suffix | State Class | Unit | Description / Attributes |
 | :--- | :--- | :--- | :--- | :--- |
-| **Heart Rate** | `_heart_rate` | `measurement` | bpm | Latest heart rate reading. Attributes: `min_heart_rate`, `max_heart_rate`, `avg_heart_rate` |
-| **Resting Heart Rate**| `_resting_hr`| `measurement` | bpm | Daily resting heart rate baseline |
+| **Heart Rate** | `_heart_rate` | `measurement` | bpm | Latest reading. Attributes: `min_heart_rate`, `max_heart_rate`, `avg_heart_rate` |
+| **Resting Heart Rate**| `_resting_hr`| `measurement` | bpm | Daily basal resting heart rate baseline |
 | **Stress Level** | `_stress` | `measurement` | score | Continuous stress level (0-100 scale). Attributes: `min_stress`, `max_stress` |
 | **Blood Oxygen (SpO2)**| `_spo2` | `measurement` | `%` | Peripheral capillary oxygen saturation |
 | **Breathing Quality** | `_breathing_score` | `measurement` | score | Nocturnal respiratory stability index |
@@ -138,11 +111,24 @@ Provides real-time biometric telemetry, cardiovascular analytics, sleep architec
 | **Training Load (7-Day)** | `_training_load` | `measurement` | Rolling 7-day acute athletic load. Attributes: `optimal_min`, `optimal_max` |
 | **Daily Training Load** | `_training_load_today` | `measurement` | Athletic training stress accumulated during the current calendar day |
 
+<details>
+<summary><b>View Optional Body Composition Scale Sensors</b></summary>
+
+> When smart scales are associated with the user profile, the following additional sensors populate automatically:
+>
+> * **Weight** (`_weight`) — Unit: `kg`, Device Class: `weight`
+> * **BMI** (`_bmi`) — Body Mass Index
+> * **Body Fat** (`_body_fat`) — Unit: `%`
+> * **Muscle Mass** (`_muscle_mass`) — Unit: `kg`
+> * **Body Water** (`_body_water`) — Unit: `%`
+> * **Bone Mass** (`_bone_mass`) — Unit: `kg`
+</details>
+
 ### 6. Interactive Controls (Button Platform)
 
 | Button Entity | Entity ID Suffix | Device Class | Description |
 | :--- | :--- | :--- | :--- |
-| **Sync Now** | `_sync_now` | `update` | Triggers an immediate cloud poll without waiting for the scheduled 15-minute timer |
+| **Sync Now** | `_sync_now` | `update` | Requests an immediate cloud refresh without waiting for the 15-minute polling timer |
 
 ---
 
@@ -150,21 +136,20 @@ Provides real-time biometric telemetry, cardiovascular analytics, sleep architec
 
 ### Method 1: HACS (Recommended)
 
-1. Ensure [HACS](https://hacs.xyz/) is installed and operational.
-2. In the Home Assistant sidebar, navigate to **HACS -> Integrations**.
-3. Click the overflow menu in the top right corner (three vertical dots) and choose **Custom repositories**.
-4. Configure the repository:
+1. Navigate to **HACS -> Integrations** in the Home Assistant interface.
+2. Click the overflow menu (three vertical dots) in the upper-right corner and select **Custom repositories**.
+3. Enter the repository details:
    * **Repository:** `https://github.com/yardeff/ha-zepp`
    * **Type:** `Integration`
-5. Click **Add**, locate **Zepp (Amazfit)** in the list, and select **Download**.
-6. Restart Home Assistant.
+4. Click **Add**, locate **Zepp (Amazfit)** in the integration catalog, and click **Download**.
+5. Restart Home Assistant.
 
-### Method 2: Manual Installation
+### Method 2: Manual Deployment
 
-1. Download the latest source code archive from the GitHub repository.
-2. Extract the archive and copy the directory `custom_components/zepp/` into your Home Assistant configuration directory:
+1. Download the latest source archive from the GitHub repository.
+2. Extract the `custom_components/zepp` folder into your Home Assistant configuration directory:
    ```text
-   <homeassistant-config>/custom_components/zepp/
+   <config>/custom_components/zepp/
    ```
 3. Restart Home Assistant.
 
@@ -174,47 +159,42 @@ Provides real-time biometric telemetry, cardiovascular analytics, sleep architec
 
 In Home Assistant, navigate to **Settings -> Devices & Services -> Add Integration** and search for **Zepp (Amazfit)**.
 
-Choose the authentication procedure matching how your Zepp account was created:
-
-```
-                      +-----------------------------+
-                      | How did you sign up in Zepp? |
-                      +-----------------------------+
-                                     |
-                 +-------------------+-------------------+
-                 |                                       |
-       [Email & Direct Password]               [Google / Apple / Mi / Social]
-                 |                                       |
-                 v                                       v
-         Use Method A (Direct)                 Use Method B (Browser Cookies)
-       1-step email & pass input             Interactive web login + cookie copy
-```
-
 ### Method A: Direct Zepp Account (Email & Password)
 
-1. Select **Direct Zepp Account (Email & Password)**.
-2. Enter your Zepp registration email address and password.
-3. Keep the region set to **Auto-detect / Worldwide (Recommended)** (or select your specific country).
-4. Click **Submit**. Home Assistant will authenticate, probe regional servers, and bind your devices automatically.
+> Select this method if you registered in Zepp using your email address and a direct password.
+
+1. Choose **Direct Zepp Account (Email & Password)** in the setup dialog.
+2. Enter your account email address and password.
+3. Keep the region setting as **Auto-detect / Worldwide (Recommended)**.
+4. Click **Submit**. The integration authenticates, discovers the regional server, and provisions all device entities.
 
 ---
 
-### Method B: Social Login (Google, Apple ID, Mi Account, Third-Party)
+### Method B: Social Login (Google, Apple ID, Mi Account)
 
-Users who sign in to Zepp using third-party identity providers do not possess a direct Huami password. Follow these steps to obtain a session token via the official web platform:
+> Select this method if your Zepp account is linked to Google, Apple, or Xiaomi single sign-on. Third-party identity providers do not issue raw passwords to Home Assistant.
 
-1. Open the official login portal in your desktop browser:  
-   **[Zepp Web Sign-In Portal](https://user.zepp.com/universalLogin/index.html#/login?project_name=watchface&project_redirect_uri=https%3A%2F%2Fwatchface.zepp.com%2Fcreate&platform_app=com.huami.webapp&specify_lang=en)**
-2. Authenticate using your **Google**, **Apple ID**, or **Mi Account**.
-3. Upon successful login, the portal redirects to the Zepp Developer / Watchface interface. This redirection confirms an active web session.
-4. Press `F12` (or right-click anywhere and select **Inspect**) to open Browser Developer Tools, then switch to the **Console** tab.
-5. Paste the following command into the Console and press `Enter`:
+<details open>
+<summary><b>Step-by-Step Browser Cookie Extraction Guide</b></summary>
+
+1. Open the official sign-in portal in your desktop browser:  
+   [Zepp Web Sign-In Portal](https://user.zepp.com/universalLogin/index.html#/login?project_name=watchface&project_redirect_uri=https%3A%2F%2Fwatchface.zepp.com%2Fcreate&platform_app=com.huami.webapp&specify_lang=en)
+
+2. Complete authentication using your **Google**, **Apple**, or **Mi** account credentials.
+
+3. After successful authentication, the portal redirects to the Zepp Developer / Watchface interface. This redirection confirms an active web session.
+
+4. Press `F12` (or right-click anywhere and select **Inspect**) to open Browser Developer Tools, then switch to the **Console** tab.  
+   *(If your browser displays a security notice blocking pastes, type `allow pasting` into the console and press Enter).*
+
+5. Copy and execute the following snippet in the Console:
 
 ```javascript
 copy(document.cookie); console.log('%c[SUCCESS] Cookies copied to clipboard!', 'background: #22c55e; color: #000; font-size: 14px; font-weight: bold; padding: 4px;');
 ```
 
-6. Return to Home Assistant, select **Browser Cookies**, press `Ctrl+V` to paste the credentials into the input field, and click **Submit**.
+6. Return to the Home Assistant setup dialog, select **Browser Cookies**, press `Ctrl+V` in the text field, and click **Submit**.
+</details>
 
 ---
 
@@ -222,7 +202,7 @@ copy(document.cookie); console.log('%c[SUCCESS] Cookies copied to clipboard!', '
 
 ### `zepp.sync_history`
 
-Performs bulk ingestion of historical wearable records directly into the Home Assistant Long-Term Statistics (LTS) database engine. 
+Performs bulk historical backfilling of wearable records directly into Home Assistant's Long-Term Statistics database (`statistics` and `statistics_short_term` tables).
 
 ```yaml
 action: zepp.sync_history
@@ -230,66 +210,87 @@ data:
   days: 365
 ```
 
-#### Service Fields
-
-* **`days`** *(integer, optional, default: 365)*:  
-  Number of retrospective days to retrieve and process. Backfills daily statistics for Steps, Distance, Calories, Sleep, and Resting Heart Rate without triggering transient state change events.
+> [!NOTE]
+> **Automatic Initial Sync:**  
+> Upon initial integration configuration, a 365-day historical backfill runs automatically in the background. You do not need to schedule periodic executions of this service; ongoing daily metrics are captured continuously during normal polling.
 
 ---
 
-## Diagnostic Reporting
+## Diagnostics & Troubleshooting
 
-If an anomaly occurs or a sensor behaves unexpectedly:
+<details>
+<summary><b>How to Download Sanitized Diagnostic Reports for GitHub Issues</b></summary>
+
+If an anomaly occurs or an API endpoint returns unexpected values:
 
 1. Navigate to **Settings -> Devices & Services -> Zepp (Amazfit)**.
-2. Click the three vertical dots next to your integration entry and select **Download diagnostics**.
-3. Home Assistant generates a structured JSON report containing cloud responses, device hardware descriptors, and coordinator states.
-4. All sensitive authorization keys, passwords, email addresses, and network identifiers are automatically redacted (`**REDACTED**`) before export.
-5. Attach the file to a [GitHub Issue](https://github.com/yardeff/ha-zepp/issues).
+2. Click the three vertical dots on the integration card and select **Download diagnostics**.
+3. Home Assistant generates a structured JSON report containing coordinator states, device registers, and API responses.
+4. All authorization tokens, passwords, email addresses, and MAC addresses are automatically scrubbed (`**REDACTED**`) prior to export.
+5. Attach the downloaded JSON file to your report on [GitHub Issues](https://github.com/yardeff/ha-zepp/issues).
+</details>
 
 ---
 
-## Frequently Asked Questions (FAQ)
+## Frequently Asked Questions
 
-#### Compatibility & Ecosystem
+<details>
+<summary><b>Ecosystem & Device Compatibility</b></summary>
 
-* **Q: Does this integration support Mi Fitness (Xiaomi Wear) or Zepp Life (Mi Fit)?**  
-  No. Xiaomi / Mi Fitness and legacy Zepp Life operate across separate servers and closed proprietary APIs. Only devices actively registered inside the official **Zepp** mobile app are supported.
+> **Q: Does this integration support Mi Fitness (Xiaomi Wear) or Zepp Life (Mi Fit)?**  
+> No. Xiaomi / Mi Fitness and legacy Zepp Life operate across separate servers and closed proprietary APIs. Only devices actively registered inside the official **Zepp** mobile app are supported.
+>
+> **Q: Which wearable models are compatible?**  
+> Any smartwatch or smart band actively synchronizing through the official Zepp mobile application. Compatible families include:
+> * Amazfit Balance, Active, Cheetah, Falcon
+> * Amazfit T-Rex series (T-Rex, T-Rex Pro, T-Rex 2, T-Rex 3, T-Rex Ultra)
+> * Amazfit GTR and GTS series (all generations)
+> * Amazfit Bip series and Amazfit Band series
+</details>
 
-* **Q: Which watch models are compatible?**  
-  Every smartwatch and smart band that synchronizes through the official Zepp mobile application. This includes the Amazfit Balance, Active, Cheetah, Falcon, T-Rex series, GTR series, GTS series, Bip series, and Amazfit Band series.
+<details>
+<summary><b>Data Sync Frequency & Bluetooth Latency</b></summary>
 
-#### Data Synchronization & Latency
+> **Q: Why do sensors update every 15 minutes instead of in real time?**  
+> Wearables communicate with your mobile phone via Bluetooth Low Energy (BLE); your phone periodically pushes encrypted batches to the cloud. The watch has no direct Wi-Fi communication with Home Assistant. Polling the cloud faster than every 15 minutes would not yield newer data (until the phone syncs with the watch) and risks IP rate-limiting by cloud firewalls.
+>
+> **Q: How can I force an immediate data refresh?**  
+> 1. Open the Zepp app on your phone and pull down on the dashboard to force an immediate BLE-to-cloud upload.  
+> 2. Click the **Sync Now** button entity on your device card in Home Assistant.
+</details>
 
-* **Q: Why do sensors update every 15 minutes instead of instantly?**  
-  Wearables transmit data via Bluetooth Low Energy (BLE) to your smartphone; your phone then uploads encrypted batches to Zepp cloud servers. The watch has no direct Wi-Fi communication with Home Assistant. A 15-minute cloud polling cycle strikes an optimal balance between up-to-date figures and preventing cloud rate-limiting or firewall blocking.
+<details>
+<summary><b>Session Security & Token Expiry</b></summary>
 
-* **Q: How can I update metrics immediately?**  
-  Open the Zepp app on your phone and pull down on the dashboard to force an immediate BLE-to-cloud upload. Then, click the **Sync Now** button entity on the device card in Home Assistant.
+> **Q: Will using this integration log me out of the Zepp app on my phone?**  
+> No. Standard mobile logins displace existing sessions, but this integration connects under the designated web platform application identifier (`com.huami.webapp`), providing an isolated session channel that operates alongside your mobile application.
+>
+> **Q: What happens when session tokens expire?**  
+> * **Direct Accounts:** Token refreshing is handled automatically in the background using stored credentials.  
+> * **Social Logins:** When a web cookie session expires, Home Assistant issues a standard **Re-authenticate** prompt. Click the alert and paste fresh cookies from your browser.
+</details>
 
-#### Architecture & Security
+<details>
+<summary><b>Notifications & Two-Way Hardware Control</b></summary>
 
-* **Q: Will using this integration log me out of the Zepp app on my phone?**  
-  No. Standard mobile logins displace existing sessions, but this integration connects under the designated web platform application identifier (`com.huami.webapp`), providing an isolated session channel that operates alongside your mobile application.
-
-* **Q: What happens when credentials or tokens expire?**  
-  * **Direct Accounts:** Token refreshing is handled automatically in the background using stored credentials.
-  * **Social Logins:** When a web cookie session expires, Home Assistant issues a standard **Re-authenticate** alert. Click the alert and paste fresh cookies from your browser.
-
-* **Q: Can this integration send notifications or trigger watch buzzes?**  
-  No. This is an official cloud telemetry integration designed for monitoring health and activity. Bidirectional push notifications require local BLE connections or dedicated Zepp OS on-device applications.
+> **Q: Can this integration send notifications to the watch or trigger vibrations?**  
+> No. This is an official cloud telemetry integration designed for health monitoring and automation triggers. Bidirectional push notifications require local BLE connections or dedicated Zepp OS on-device applications.
+>
+> **Q: Does it export raw GPS activity routes and maps?**  
+> No. The integration collects aggregated athletic telemetry (steps, distance, active calories, and training load), but does not ingest large binary/GPX map coordinate streams.
+</details>
 
 ---
 
 ## License & Disclaimers
 
-This project is licensed under the **MIT License**. Refer to the [LICENSE](LICENSE) file for complete terms and conditions.
+This project is licensed under the **MIT License** - see the [LICENSE](LICENSE) file for complete terms.
 
-* **Trademark Notice:**  
-  This software is an independent community project. Amazfit, Zepp, Huami, and their respective logos are registered trademarks of Anhui Huami Information Technology Co., Ltd. and Zepp Health Corporation. This project is not affiliated with, endorsed by, or associated with Zepp Health Corporation.
+> **Trademark Notice:**  
+> Amazfit, Zepp, Huami, and their respective logos are registered trademarks of Anhui Huami Information Technology Co., Ltd. and Zepp Health Corporation. This software is an independent community project and is not affiliated with, sponsored by, or endorsed by Zepp Health Corporation.
 
-* **Medical Disclaimer:**  
-  All telemetry, biometric data, and statistics provided by this integration are intended solely for personal informational and home automation purposes. They must not be utilized for medical diagnosis, clinical treatment, or critical health monitoring.
+> **Medical Disclaimer:**  
+> All biometric metrics, health assessments, and physical activity values provided by this integration are intended solely for personal informational and home automation purposes. They must not be utilized for medical diagnosis, clinical evaluation, or critical health monitoring.
 
 ---
 
