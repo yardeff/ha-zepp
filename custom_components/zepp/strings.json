@@ -34,6 +34,13 @@
           "token_or_url": "Browser Cookies or Token",
           "country_code": "Account Region / Country"
         }
+      },
+      "discovery": {
+        "title": "Connecting to Zepp"
+      },
+      "discovery_error": {
+        "title": "Connection Failed",
+        "description": "Could not connect to Zepp servers:\n\n**{error_detail}**\n\nClick Submit to return and check your credentials."
       }
     },
     "error": {
@@ -46,6 +53,9 @@
       "already_configured": "This Zepp account is already configured.",
       "reauth_successful": "Re-authentication was successful.",
       "unknown": "Unexpected authentication error."
+    },
+    "progress": {
+      "connecting": "Connecting to Zepp servers and discovering your smartwatches..."
     }
   }
 }

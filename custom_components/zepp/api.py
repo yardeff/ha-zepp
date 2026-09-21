@@ -1,6 +1,7 @@
 """Async client for Zepp Cloud API."""
 from __future__ import annotations
 
+import asyncio
 import base64
 import json
 import logging
@@ -350,90 +351,109 @@ async def async_fetch_devices(
     return []
 
 
+def parse_discovered_devices(devices_to_parse: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Parse raw Zepp device payloads into structured dictionary records."""
+    parsed_devices = []
+    for dev in devices_to_parse:
+        src = dev.get("deviceSource")
+        disp = dev.get("displayName")
+        info_name = dev.get("deviceInfo", {}).get("name") or dev.get("deviceSourceText")
+        model_name = resolve_device_name(src, disp or info_name)
+
+        mac = dev.get("macAddress", "Unknown")
+        sn = dev.get("sn", "")
+        fw = dev.get("firmwareVersion", "")
+        device_id = dev.get("deviceId", mac.replace(":", ""))
+
+        # Extract hardware attributes and BLE auth key
+        add_info_raw = dev.get("additionalInfo")
+        auth_key = None
+        bt_mac = None
+        hw_ver = None
+        product_id = None
+        if add_info_raw:
+            try:
+                add_info = json.loads(add_info_raw)
+                auth_key = add_info.get("auth_key")
+                bt_mac = add_info.get("btmac")
+                hw_ver = add_info.get("hardwareVersion")
+                product_id = add_info.get("productId")
+            except Exception:
+                pass
+
+        # Extract battery status if present in device payload
+        battery = None
+        for raw_source in [dev.get("additionalSource"), dev.get("additionalInfo")]:
+            if not raw_source:
+                continue
+            try:
+                p = json.loads(raw_source) if isinstance(raw_source, str) else raw_source
+                if isinstance(p, dict) and "battery" in p:
+                    b_val = p["battery"].get("level")
+                    if b_val is not None:
+                        battery = int(b_val)
+                        break
+            except Exception:
+                pass
+
+        parsed_devices.append({
+            "device_id": device_id,
+            "device_name": model_name,
+            "device_mac": mac,
+            "device_sn": sn,
+            "firmware": fw,
+            "device_source": src,
+            "auth_key": auth_key,
+            "bt_mac": bt_mac,
+            "hardware_version": hw_ver,
+            "product_id": product_id,
+            "active_status": dev.get("activeStatus", 1 if len(devices_to_parse) == 1 else 0),
+            "last_active_time": dev.get("lastActiveStatusUpdateTime") or dev.get("lastStatusUpdateTime"),
+            "battery": battery,
+        })
+
+    # Sort so that actively worn device is always the first/primary device
+    parsed_devices.sort(
+        key=lambda d: (d.get("active_status", 0), d.get("last_active_time") or 0),
+        reverse=True,
+    )
+    return parsed_devices
+
+
 async def async_discover_zepp_devices(
     session: aiohttp.ClientSession,
     apptoken: str,
     userid: str,
     cname: str | None = None,
 ) -> tuple[str, list[dict[str, Any]]]:
-    """Probe regions and return active regional host and parsed device list."""
+    """Probe regions concurrently and return active regional host and parsed device list."""
     candidate_hosts = parse_region_host_from_cname(cname)
 
+    async def _check_host(host: str) -> tuple[str, list[dict[str, Any]]]:
+        try:
+            raw = await async_fetch_devices(session, apptoken, userid, host)
+            return host, raw
+        except Exception:
+            return host, []
+
+    fetch_results = await asyncio.gather(*[_check_host(h) for h in candidate_hosts])
+    results_map = dict(fetch_results)
+
+    # 1. First priority: candidate order with active bindingStatus == 1 devices
     for host in candidate_hosts:
-        raw_devices = await async_fetch_devices(session, apptoken, userid, host)
+        raw_devices = results_map.get(host) or []
+        active_devices = [d for d in raw_devices if d.get("bindingStatus", 1) == 1]
+        if active_devices:
+            return host, parse_discovered_devices(active_devices)
+
+    # 2. Second priority: any host that returned any devices
+    for host in candidate_hosts:
+        raw_devices = results_map.get(host) or []
         if raw_devices:
-            # Filter for actively bound devices (bindingStatus == 1) to ignore historical unlinked wearables
-            active_devices = [d for d in raw_devices if d.get("bindingStatus", 1) == 1]
-            devices_to_parse = active_devices if active_devices else raw_devices
+            return host, parse_discovered_devices(raw_devices)
 
-            parsed_devices = []
-            for dev in devices_to_parse:
-                src = dev.get("deviceSource")
-                disp = dev.get("displayName")
-                info_name = dev.get("deviceInfo", {}).get("name") or dev.get("deviceSourceText")
-                model_name = resolve_device_name(src, disp or info_name)
-
-                mac = dev.get("macAddress", "Unknown")
-                sn = dev.get("sn", "")
-                fw = dev.get("firmwareVersion", "")
-                device_id = dev.get("deviceId", mac.replace(":", ""))
-
-                # Extract hardware attributes and BLE auth key
-                add_info_raw = dev.get("additionalInfo")
-                auth_key = None
-                bt_mac = None
-                hw_ver = None
-                product_id = None
-                if add_info_raw:
-                    try:
-                        add_info = json.loads(add_info_raw)
-                        auth_key = add_info.get("auth_key")
-                        bt_mac = add_info.get("btmac")
-                        hw_ver = add_info.get("hardwareVersion")
-                        product_id = add_info.get("productId")
-                    except Exception:
-                        pass
-
-                # Extract battery status if present in device payload
-                battery = None
-                for raw_source in [dev.get("additionalSource"), dev.get("additionalInfo")]:
-                    if not raw_source:
-                        continue
-                    try:
-                        p = json.loads(raw_source) if isinstance(raw_source, str) else raw_source
-                        if isinstance(p, dict) and "battery" in p:
-                            b_val = p["battery"].get("level")
-                            if b_val is not None:
-                                battery = int(b_val)
-                                break
-                    except Exception:
-                        pass
-
-                parsed_devices.append({
-                    "device_id": device_id,
-                    "device_name": model_name,
-                    "device_mac": mac,
-                    "device_sn": sn,
-                    "firmware": fw,
-                    "device_source": src,
-                    "auth_key": auth_key,
-                    "bt_mac": bt_mac,
-                    "hardware_version": hw_ver,
-                    "product_id": product_id,
-                    "active_status": dev.get("activeStatus", 1 if len(devices_to_parse) == 1 else 0),
-                    "last_active_time": dev.get("lastActiveStatusUpdateTime") or dev.get("lastStatusUpdateTime"),
-                    "battery": battery,
-                })
-
-            # Sort so that actively worn device is always the first/primary device
-            parsed_devices.sort(
-                key=lambda d: (d.get("active_status", 0), d.get("last_active_time") or 0),
-                reverse=True,
-            )
-
-            return host, parsed_devices
-
-    return candidate_hosts[0], []
+    default_host = candidate_hosts[0] if candidate_hosts else "https://api-mifit-ru.huami.com"
+    return default_host, []
 
 
 async def async_fetch_band_data(
