@@ -1,6 +1,8 @@
 # Zepp (Amazfit) for Home Assistant
 
-[English](README.md) | [Русский](README.ru.md)
+[English](README.md) | [Русский](README.ru.md) | [Telegram](https://t.me/yardev_code)
+
+[![Telegram](https://img.shields.io/badge/Telegram-Channel-2CA5E0?style=flat&logo=telegram&logoColor=white)](https://t.me/yardev_code)
 
 Home Assistant integration for connecting **Amazfit and Zepp smartwatches and fitness bands** using the official Zepp cloud APIs.
 
@@ -285,6 +287,13 @@ The integration includes a built-in diagnostic subsystem fully integrated with H
 
 > No. This integration reads health and activity metrics from the cloud. Sending notifications requires a direct local Bluetooth connection or a companion app running on the watch (Zepp OS).
 </details>
+
+---
+
+## Community & Author
+
+* Author: [yardev](https://github.com/yardeff)
+* Telegram: [@yardev_code](https://t.me/yardev_code)
 
 ---
 
