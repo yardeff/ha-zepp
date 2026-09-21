@@ -146,6 +146,54 @@ data:
 2. Search for **Zepp** and select it.
 3. Follow the guided instructions presented in the setup dialog corresponding to your login type (Direct Credentials or Browser Cookies).
 
+---
+
+## Frequently Asked Questions (FAQ)
+
+### Compatibility & Ecosystem
+
+**Q: Does this integration support Mi Fitness (Xiaomi Wear) or Zepp Life (Mi Fit)?**  
+No. This integration operates strictly through the official **Zepp** mobile cloud ecosystem. Devices linked to Xiaomi / Mi Fitness accounts use separate servers and authentication protocols and are not supported.
+
+**Q: Which watch and band models are supported?**  
+Any smartwatch or fitness band actively connected and synchronizing through the official Zepp mobile application. If your wearable syncs with the Zepp app on iOS or Android, it is supported.
+
+### Polling & Update Frequency
+
+**Q: Why do sensors update every 15 minutes instead of in real time?**  
+Wearables communicate with your mobile phone via Bluetooth Low Energy (BLE), and the Zepp mobile app periodically pushes cached metrics to the cloud. The watch does not have a direct Wi-Fi internet uplink to Home Assistant. Polling the cloud faster than every 15 minutes would not yield newer data (until the phone syncs with the watch) and would risk IP rate-limiting by cloud firewalls.
+
+**Q: How can I force an immediate data refresh in Home Assistant?**  
+1. Open the Zepp app on your phone and pull down on the home screen to force an immediate Bluetooth-to-cloud sync.
+2. In Home Assistant, click the three-dot menu on the Zepp integration card and select **Reload**.
+
+### Authentication & Sessions
+
+**Q: Why does social login (Google / Apple / Mi) require copying browser cookies via developer tools?**  
+Google and Apple enforce interactive CAPTCHA and multi-factor authentication (2FA) that deliberately block third-party headless script logins. Signing in through the official Zepp web portal ensures your credentials remain completely private and are never exposed to Home Assistant, while providing a valid session token.
+
+**Q: Why does the login URL redirect to the Watchface Maker portal?**  
+That portal is the official Zepp developer platform (`com.huami.webapp`). By authenticating through this interface, Home Assistant operates under an isolated web platform session. This prevents kicking out or disconnecting the primary Zepp application on your phone.
+
+**Q: What happens when the session token expires?**  
+- **Direct Accounts (Email & Password):** No action is required. The integration automatically initiates a background login handshake, refreshes the token, and resumes polling seamlessly.
+- **Federated Accounts (Google / Apple / Mi):** Home Assistant triggers a native re-authentication prompt. Click **Reconfigure** and paste updated browser cookies.
+
+### Device Control & Features
+
+**Q: Can this integration send notifications to the watch, set alarms, or trigger HA automations from the watch?**  
+No. This is a **cloud-based, read-only telemetry and health analytics integration**. Two-way real-time hardware interaction requires a direct local Bluetooth connection to the Home Assistant host or a custom watchface/app on Zepp OS, which is outside the scope of this cloud integration.
+
+**Q: Does it export raw GPS activity routes and maps?**  
+No. The integration collects aggregated athletic telemetry (steps, distance, active calories, and training load), but does not ingest large binary/GPX map coordinate streams.
+
+### Long-Term Statistics (LTS)
+
+**Q: What is the purpose of the `zepp.sync_history` service, and should it be run regularly?**  
+The service is intended for one-off historical backfills (up to 5 years) directly into Home Assistant's Long-Term Statistics database. Upon initial integration setup, it runs automatically for the past 365 days. You do not need to schedule or run this service periodically, as daily records are continuously recorded into statistics during normal polling.
+
+---
+
 ## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for full details and legal disclaimers.

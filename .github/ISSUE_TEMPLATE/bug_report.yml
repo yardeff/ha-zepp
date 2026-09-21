@@ -1,0 +1,77 @@
+﻿name: Bug Report
+description: Report a reproducible issue or defect with the Zepp integration
+title: "[BUG]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report an issue!
+        Please verify that you have read the **[FAQ in README](https://github.com/yarchefis/ha-zepp#frequently-asked-questions-faq)** before submitting.
+  - type: input
+    id: device_model
+    attributes:
+      label: Device Model
+      description: What is your exact smartwatch or band model?
+      placeholder: e.g. Amazfit Balance / Amazfit GTR 4 / Amazfit Band 7
+    validations:
+      required: true
+  - type: checkboxes
+    id: app_verification
+    attributes:
+      label: Ecosystem Verification
+      description: This integration strictly supports the official Zepp mobile ecosystem.
+      options:
+        - label: I confirm this device is synced via the official **Zepp** mobile app (NOT Zepp Life, Mi Fitness, or Xiaomi Wear).
+          required: true
+  - type: dropdown
+    id: auth_method
+    attributes:
+      label: Authentication Method
+      description: How is your Zepp account authenticated in Home Assistant?
+      options:
+        - Direct Email & Password
+        - Browser Cookies / Social Token (Google / Apple / Mi)
+    validations:
+      required: true
+  - type: input
+    id: ha_version
+    attributes:
+      label: Home Assistant Version
+      description: Which version of Home Assistant are you running?
+      placeholder: e.g. 2026.9.3 / 2024.12
+    validations:
+      required: true
+  - type: input
+    id: integration_version
+    attributes:
+      label: Integration Version
+      description: Which version of ha-zepp are you using?
+      placeholder: e.g. v1.0.0 or main branch
+    validations:
+      required: true
+  - type: textarea
+    id: description
+    attributes:
+      label: Problem Description
+      description: Describe what happened and what you expected to happen instead.
+      placeholder: Steps to reproduce the issue...
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Home Assistant Logs
+      description: |
+        Please provide relevant error logs from Home Assistant (Settings -> System -> Logs).
+        Tip: enable debug logging by adding custom_components.zepp: debug under logger: default: info: logs:.
+      render: shell
+    validations:
+      required: true
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Confirmation
+      options:
+        - label: I have verified that this is not an unsupported feature (such as watch notifications, two-way BLE control, or Mi Fitness accounts).
+          required: true
