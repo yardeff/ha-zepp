@@ -29,9 +29,6 @@ Provides real-time biometric telemetry, cardiovascular analytics, sleep architec
 * **▸ Long-Term Statistics (LTS) Recorder Engine**  
   Native integration with Home Assistant's statistical database engine. Automatically backfills historical data directly into `statistics` and `statistics_short_term` tables without generating transient state history events.
 
-* **▸ Monotonic Midnight Counter Isolation**  
-  Step accumulation strictly enforces calendar date boundaries (`date_time == today_str`), preventing negative delta spikes or recorder corruption in Home Assistant Energy and Activity dashboards during midnight resets.
-
 ---
 
 ## Entity Catalog
@@ -43,7 +40,7 @@ Provides real-time biometric telemetry, cardiovascular analytics, sleep architec
 | **Watch Model** | `_model` | None | String | Hardware model descriptor and platform parameters |
 | **Battery Level** | `_battery` | `battery` | `%` | Real-time wearable battery percentage |
 | **MAC Address** | `_mac` | None | String | Hardware Bluetooth MAC address |
-| **Firmware Version**| `_firmware` | None | String | Operating system build version |
+| **Firmware Version**| `_firmware` | None | String | Installed device firmware version |
 | **Serial Number** | `_serial` | None | String | Factory serial number |
 
 <details>
@@ -172,7 +169,7 @@ In Home Assistant, navigate to **Settings -> Devices & Services -> Add Integrati
 
 ### Method B: Social Login (Google, Apple ID, Mi Account)
 
-> Select this method if your Zepp account is linked to Google, Apple, or Xiaomi single sign-on. Third-party identity providers do not issue raw passwords to Home Assistant.
+> Select this method if you sign in to Zepp using Google, Apple, or Mi. Since federated accounts do not have a dedicated Zepp password, authentication uses browser session cookies.
 
 <details open>
 <summary><b>Step-by-Step Browser Cookie Extraction Guide</b></summary>
@@ -241,11 +238,7 @@ If an anomaly occurs or an API endpoint returns unexpected values:
 > No. Xiaomi / Mi Fitness and legacy Zepp Life operate across separate servers and closed proprietary APIs. Only devices actively registered inside the official **Zepp** mobile app are supported.
 >
 > **Q: Which wearable models are compatible?**  
-> Any smartwatch or smart band actively synchronizing through the official Zepp mobile application. Compatible families include:
-> * Amazfit Balance, Active, Cheetah, Falcon
-> * Amazfit T-Rex series (T-Rex, T-Rex Pro, T-Rex 2, T-Rex 3, T-Rex Ultra)
-> * Amazfit GTR and GTS series (all generations)
-> * Amazfit Bip series and Amazfit Band series
+> Any smartwatch or smart band actively synchronizing through the official Zepp mobile application.
 </details>
 
 <details>
