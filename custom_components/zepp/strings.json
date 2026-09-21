@@ -57,5 +57,16 @@
     "progress": {
       "connecting": "Connecting to Zepp servers and discovering your smartwatches..."
     }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Configure Zepp Integration",
+        "description": "Adjust background cloud polling interval for health and fitness metrics.",
+        "data": {
+          "scan_interval": "Update Interval"
+        }
+      }
+    }
   }
 }

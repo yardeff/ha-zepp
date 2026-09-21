@@ -30,31 +30,34 @@ from .const import (
     CONF_EMAIL,
     CONF_PASSWORD,
     CONF_REGION_HOST,
+    CONF_SCAN_INTERVAL,
     CONF_USERID,
+    DEFAULT_SCAN_INTERVAL,
     DOMAIN,
 )
 
 _LOGGER = logging.getLogger(__name__)
-
-SCAN_INTERVAL = datetime.timedelta(minutes=15)
 
 
 class ZeppCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     """Coordinator to fetch all current metrics from Zepp cloud."""
 
     def __init__(self, hass: HomeAssistant, entry: ConfigEntry | dict[str, Any]) -> None:
+        interval_minutes = DEFAULT_SCAN_INTERVAL
+        if isinstance(entry, ConfigEntry):
+            self.entry: ConfigEntry | None = entry
+            self.entry_data = entry.data
+            interval_minutes = entry.options.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL)
+        else:
+            self.entry = None
+            self.entry_data = entry
+
         super().__init__(
             hass,
             _LOGGER,
             name=DOMAIN,
-            update_interval=SCAN_INTERVAL,
+            update_interval=datetime.timedelta(minutes=interval_minutes),
         )
-        if isinstance(entry, ConfigEntry):
-            self.entry: ConfigEntry | None = entry
-            self.entry_data = entry.data
-        else:
-            self.entry = None
-            self.entry_data = entry
 
         self.apptoken: str = self.entry_data[CONF_APPTOKEN]
         self.userid: str = str(self.entry_data[CONF_USERID])

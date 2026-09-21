@@ -14,6 +14,8 @@ CONF_DEVICE_NAME = "device_name"
 CONF_DEVICE_MAC = "device_mac"
 CONF_DEVICE_SN = "device_sn"
 CONF_FIRMWARE = "firmware"
+CONF_SCAN_INTERVAL = "scan_interval"
+DEFAULT_SCAN_INTERVAL = 15
 
 AUTH_CALLBACK_PATH = "/api/zepp/callback"
 AUTH_CALLBACK_NAME = "api:zepp:callback"
