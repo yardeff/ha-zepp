@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import datetime
+import json
 import logging
 from typing import Any
 
@@ -116,6 +117,7 @@ class ZeppCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "spo2": None,
             "breathing_score": None,
             "odi": None,
+            "readiness_score": None,
             "total_pai": None,
             "hrv": None,
             "training_load_total": None,
@@ -228,15 +230,25 @@ class ZeppCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # 3. Blood Oxygen & Breathing Quality
         try:
             spo2_events = await async_fetch_user_events(
-                session, self.host, self.apptoken, self.userid, "blood_oxygen", from_ts=day_ago_ms, to_ts=now_ms, limit=10
+                session, self.host, self.apptoken, self.userid, "blood_oxygen", from_ts=day_ago_ms, to_ts=now_ms, limit=15
             )
+            # Fallback to history if no events recorded in the last 24h
+            if not spo2_events:
+                spo2_events = await async_fetch_user_events(
+                    session, self.host, self.apptoken, self.userid, "blood_oxygen", limit=20
+                )
+
             if spo2_events:
                 for event in spo2_events:
                     sub_type = event.get("subType")
+
+                    # Check ODI breathing score
                     if sub_type == "odi":
                         if result["breathing_score"] is None and "score" in event:
                             try:
-                                result["breathing_score"] = int(event["score"])
+                                score_val = int(event["score"])
+                                if score_val > 0:
+                                    result["breathing_score"] = score_val
                             except (ValueError, TypeError):
                                 pass
                         if result["odi"] is None and "odi" in event:
@@ -244,16 +256,69 @@ class ZeppCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                                 result["odi"] = float(event["odi"])
                             except (ValueError, TypeError):
                                 pass
-                    elif sub_type == "osa_event":
-                        if result["spo2"] is None and "spo2_decrease" in event:
+
+                    # Extract SpO2 (check extra JSON and root event)
+                    if result["spo2"] is None:
+                        extra_raw = event.get("extra")
+                        if extra_raw:
                             try:
-                                result["spo2"] = int(event["spo2_decrease"])
-                            except (ValueError, TypeError):
+                                ex = json.loads(extra_raw) if isinstance(extra_raw, str) else extra_raw
+                                dec = ex.get("spo2_decrease")
+                                if dec is not None and isinstance(dec, (int, float)) and 50 <= int(dec) <= 100:
+                                    result["spo2"] = int(dec)
+                                if result["spo2"] is None and "spo2" in ex:
+                                    arr = ex["spo2"]
+                                    if isinstance(arr, list) and arr:
+                                        last = arr[-1]
+                                        val = last.get("value") if isinstance(last, dict) else last
+                                        if val is not None and 50 <= int(val) <= 100:
+                                            result["spo2"] = int(val)
+                            except Exception:
                                 pass
+                        if result["spo2"] is None:
+                            val = event.get("spo2") or event.get("spo2_decrease")
+                            if val is not None:
+                                try:
+                                    if 50 <= int(val) <= 100:
+                                        result["spo2"] = int(val)
+                                except (ValueError, TypeError):
+                                    pass
         except ZeppAuthError:
             raise
         except Exception as err:
             _LOGGER.debug("Error updating SpO2 events: %s", err)
+
+        # 3.1 Sleep Breathing Quality & Readiness from Readiness events
+        try:
+            readiness_events = await async_fetch_user_events(
+                session, self.host, self.apptoken, self.userid, "readiness", limit=10
+            )
+            if readiness_events:
+                for rev in readiness_events:
+                    if rev.get("subType") == "watch_score":
+                        # AHI Breathing Score (0-100)
+                        if result["breathing_score"] is None and rev.get("ahiScore") is not None:
+                            try:
+                                ahi = int(rev["ahiScore"])
+                                if ahi >= 0:
+                                    result["breathing_score"] = ahi
+                            except (ValueError, TypeError):
+                                pass
+                        # Readiness Score (0-100)
+                        if result["readiness_score"] is None and rev.get("rdnsScore") is not None:
+                            try:
+                                result["readiness_score"] = int(rev["rdnsScore"])
+                            except (ValueError, TypeError):
+                                pass
+                        break
+
+            # Fallback: if ODI was recorded as 0.0 (0 desaturations), breathing quality is optimal (100)
+            if result["breathing_score"] is None and result["odi"] == 0.0:
+                result["breathing_score"] = 100
+        except ZeppAuthError:
+            raise
+        except Exception as r_err:
+            _LOGGER.debug("Error updating readiness events: %s", r_err)
 
         # 4. PAI
         try:

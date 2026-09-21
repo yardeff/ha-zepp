@@ -75,13 +75,23 @@ async def async_setup_entry(
         )
 
         # 1. Device Info Sensors
-        entities.extend([
+        device_sensors: list[SensorEntity] = [
             ZeppWatchModelSensor(device_id, device_name, device_info, dev, region_host, userid),
             ZeppMacAddressSensor(device_id, device_name, device_info, mac),
             ZeppFirmwareSensor(device_id, device_name, device_info, fw),
             ZeppSerialSensor(device_id, device_name, device_info, sn),
-            ZeppBatterySensor(coordinator, device_id, device_name, device_info, dev.get("battery")),
-        ])
+        ]
+        # Only register Battery sensor if the device/cloud actually supplies battery data
+        initial_batt = dev.get("battery")
+        has_batt = (
+            initial_batt is not None
+            or device_id in coordinator.data.get("device_batteries", {})
+        )
+        if has_batt:
+            device_sensors.append(
+                ZeppBatterySensor(coordinator, device_id, device_name, device_info, initial_batt)
+            )
+        entities.extend(device_sensors)
 
         # 2. Activity Sensors
         entities.extend([
@@ -104,7 +114,7 @@ async def async_setup_entry(
         ])
 
         # 4. Heart & Health Sensors
-        entities.extend([
+        health_sensors: list[SensorEntity] = [
             ZeppHeartRateSensor(coordinator, device_id, device_name, device_info),
             ZeppRestingHRSensor(coordinator, device_id, device_name, device_info),
             ZeppStressSensor(coordinator, device_id, device_name, device_info),
@@ -112,7 +122,12 @@ async def async_setup_entry(
             ZeppBreathingScoreSensor(coordinator, device_id, device_name, device_info),
             ZeppPaiSensor(coordinator, device_id, device_name, device_info),
             ZeppHrvSensor(coordinator, device_id, device_name, device_info),
-        ])
+        ]
+        if coordinator.data.get("readiness_score") is not None:
+            health_sensors.append(
+                ZeppReadinessScoreSensor(coordinator, device_id, device_name, device_info)
+            )
+        entities.extend(health_sensors)
 
         # 5. Training Load
         entities.extend([
@@ -536,6 +551,23 @@ class ZeppBreathingScoreSensor(CoordinatorEntity[ZeppCoordinator], SensorEntity)
     @property
     def native_value(self) -> int | None:
         return self.coordinator.data.get("breathing_score")
+
+
+class ZeppReadinessScoreSensor(CoordinatorEntity[ZeppCoordinator], SensorEntity):
+    _attr_has_entity_name = True
+    _attr_name = "Readiness Score"
+    _attr_icon = "mdi:lightning-bolt"
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_native_unit_of_measurement = "score"
+
+    def __init__(self, coordinator: ZeppCoordinator, device_id: str, device_name: str, device_info: DeviceInfo) -> None:
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{device_id}_readiness_score"
+        self._attr_device_info = device_info
+
+    @property
+    def native_value(self) -> int | None:
+        return self.coordinator.data.get("readiness_score")
 
 
 class ZeppPaiSensor(CoordinatorEntity[ZeppCoordinator], SensorEntity):
