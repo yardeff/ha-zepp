@@ -58,6 +58,7 @@ async def async_setup_entry(
         )
 
         buttons.append(ZeppSyncButton(coordinator, device_id, device_name, device_info))
+        buttons.append(ZeppHistoricalSyncButton(coordinator, device_id, device_name, device_info, hass, entry_data))
 
     async_add_entities(buttons)
 
@@ -85,3 +86,35 @@ class ZeppSyncButton(ButtonEntity):
         """Handle the button press: request an immediate coordinator refresh."""
         _LOGGER.debug("ZeppSyncButton pressed, requesting coordinator refresh")
         await self._coordinator.async_request_refresh()
+
+
+class ZeppHistoricalSyncButton(ButtonEntity):
+    """Button to trigger a full 365-day historical telemetry backfill."""
+
+    _attr_has_entity_name = True
+    _attr_name = "Sync Full History (365 Days)"
+    _attr_icon = "mdi:database-sync"
+    _attr_device_class = ButtonDeviceClass.UPDATE
+
+    def __init__(
+        self,
+        coordinator: ZeppCoordinator,
+        device_id: str,
+        device_name: str,
+        device_info: DeviceInfo,
+        hass: HomeAssistant,
+        entry_data: dict[str, Any],
+    ) -> None:
+        self._coordinator = coordinator
+        self._hass = hass
+        self._entry_data = entry_data
+        self._attr_unique_id = f"{device_id}_sync_history_365"
+        self._attr_device_info = device_info
+
+    async def async_press(self) -> None:
+        """Handle the button press: start background 365-day historical backfill."""
+        from .history_sync import async_sync_historical_data
+        _LOGGER.info("Starting manual 365-day historical backfill from button")
+        self._hass.async_create_task(
+            async_sync_historical_data(self._hass, self._entry_data, days=365)
+        )

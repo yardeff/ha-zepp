@@ -102,7 +102,8 @@ class ZeppCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         now_ms = int(now.timestamp() * 1000)
         day_ago_ms = int((now - datetime.timedelta(days=2)).timestamp() * 1000)
 
-        result: dict[str, Any] = {
+        # Preserve previously fetched valid data to prevent temporary 0 dips on network latency
+        result: dict[str, Any] = dict(self.data) if self.data else {
             "steps": 0,
             "distance": 0,
             "calories": 0,
@@ -141,6 +142,7 @@ class ZeppCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "stress_max": None,
             "last_updated": now.isoformat(),
         }
+        result["last_updated"] = now.isoformat()
 
         # 1. Band data: Steps, Distance, Calories, Sleep, and Heart Rate
         try:

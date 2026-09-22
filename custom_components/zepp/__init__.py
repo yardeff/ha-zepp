@@ -10,6 +10,7 @@ import homeassistant.helpers.config_validation as cv
 
 from .const import DOMAIN
 from .coordinator import ZeppCoordinator
+from .device_catalog import async_init_device_catalog
 from .history_sync import async_sync_historical_data
 from .services import async_register_services
 
@@ -23,12 +24,14 @@ PLATFORMS: list[Platform] = [Platform.SENSOR, Platform.BUTTON]
 async def async_setup(hass: HomeAssistant, config: dict) -> bool:
     """Set up the Zepp component."""
     await async_register_services(hass)
+    await async_init_device_catalog(hass)
     return True
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Zepp from a config entry."""
     hass.data.setdefault(DOMAIN, {})
+    await async_init_device_catalog(hass)
 
     coordinator = ZeppCoordinator(hass, entry)
     await coordinator.async_config_entry_first_refresh()

@@ -144,6 +144,17 @@ async def async_sync_historical_data(
         len(pai_by_day),
     )
 
+    # Global/runtime sync progress tracker
+    hass.data.setdefault(DOMAIN, {}).setdefault("history_sync_status", {})
+    hass.data[DOMAIN]["history_sync_status"] = {
+        "status": "syncing",
+        "progress": 0,
+        "synced_days": 0,
+        "total_days": days,
+        "heart_rate_points": 0,
+        "last_synced_date": None,
+    }
+
     # Sort days chronologically
     sorted_dates = sorted(raw_days.keys())
 
@@ -173,69 +184,91 @@ async def async_sync_historical_data(
         stp = day_data.get("stp", {})
         slp = day_data.get("slp", {})
 
-        # Steps
-        day_steps = float(stp.get("ttl", 0))
-        running_steps += day_steps
-        steps_stats.append(
-            StatisticData(start=dt, state=day_steps, sum=running_steps)
-        )
+        # 1. Activity: check for granular time slices (time 0..143 in stp["data"], each 10 mins)
+        stp_slices = stp.get("data")
+        if isinstance(stp_slices, list) and len(stp_slices) > 0:
+            day_accum_steps = 0.0
+            day_accum_distance = 0.0
+            day_accum_calories = 0.0
+            for s in stp_slices:
+                t_idx = s.get("time", 0)
+                slice_dt = dt + datetime.timedelta(minutes=t_idx * 10)
+                s_step = float(s.get("step", 0))
+                s_dis = float(s.get("dis", 0))
+                s_cal = float(s.get("cal", 0))
+                day_accum_steps += s_step
+                day_accum_distance += s_dis
+                day_accum_calories += s_cal
+                running_steps += s_step
+                running_distance += s_dis
+                running_calories += s_cal
+                steps_stats.append(
+                    StatisticData(start=slice_dt, state=day_accum_steps, sum=running_steps)
+                )
+                distance_stats.append(
+                    StatisticData(start=slice_dt, state=day_accum_distance, sum=running_distance)
+                )
+                calories_stats.append(
+                    StatisticData(start=slice_dt, state=day_accum_calories, sum=running_calories)
+                )
+        else:
+            # Fallback to daily total if slices are not available
+            day_steps = float(stp.get("ttl", 0))
+            running_steps += day_steps
+            steps_stats.append(
+                StatisticData(start=dt, state=day_steps, sum=running_steps)
+            )
 
-        # Distance
-        day_dis = float(stp.get("dis", 0))
-        running_distance += day_dis
-        distance_stats.append(
-            StatisticData(start=dt, state=day_dis, sum=running_distance)
-        )
+            day_dis = float(stp.get("dis", 0))
+            running_distance += day_dis
+            distance_stats.append(
+                StatisticData(start=dt, state=day_dis, sum=running_distance)
+            )
 
-        # Calories
-        day_cal = float(stp.get("cal", 0))
-        running_calories += day_cal
-        calories_stats.append(
-            StatisticData(start=dt, state=day_cal, sum=running_calories)
-        )
+            day_cal = float(stp.get("cal", 0))
+            running_calories += day_cal
+            calories_stats.append(
+                StatisticData(start=dt, state=day_cal, sum=running_calories)
+            )
 
-        # Sleep score
+        # 2. Sleep metrics
         if "ss" in slp:
             score = float(slp["ss"])
             sleep_score_stats.append(
                 StatisticData(start=dt, mean=score, min=score, max=score, state=score)
             )
 
-        # Deep sleep
         if "dp" in slp:
             dp = float(slp["dp"])
             deep_sleep_stats.append(
                 StatisticData(start=dt, mean=dp, min=dp, max=dp, state=dp)
             )
 
-        # Sleep resting HR
         if "rhr" in slp and slp["rhr"] > 0:
             rhr = float(slp["rhr"])
             sleep_rhr_stats.append(
                 StatisticData(start=dt, mean=rhr, min=rhr, max=rhr, state=rhr)
             )
 
-        # Heart Rate: aggregate by hour (24 hours per day)
+        # 3. Heart Rate: full resolution directly as recorded by watch (per minute)
         if d_str in raw_hr_by_day:
             raw_hr = raw_hr_by_day[d_str]
-            for h in range(24):
-                hr_hour_dt = dt.replace(hour=h)
-                hour_bytes = [raw_hr[m] for m in range(h * 60, min((h + 1) * 60, len(raw_hr))) if 20 <= raw_hr[m] <= 240]
-                if hour_bytes:
-                    h_min = float(min(hour_bytes))
-                    h_max = float(max(hour_bytes))
-                    h_mean = round(sum(hour_bytes) / len(hour_bytes), 1)
+            for m in range(min(1440, len(raw_hr))):
+                hr_val = raw_hr[m]
+                if 20 <= hr_val <= 240:
+                    hr_dt = dt + datetime.timedelta(minutes=m)
+                    val_float = float(hr_val)
                     heart_rate_stats.append(
                         StatisticData(
-                            start=hr_hour_dt,
-                            min=h_min,
-                            max=h_max,
-                            mean=h_mean,
-                            state=h_mean,
+                            start=hr_dt,
+                            min=val_float,
+                            max=val_float,
+                            mean=val_float,
+                            state=val_float,
                         )
                     )
 
-        # Stress: min, max, mean
+        # 4. Stress
         if d_str in stress_by_day:
             st_info = stress_by_day[d_str]
             stress_stats.append(
@@ -248,7 +281,7 @@ async def async_sync_historical_data(
                 )
             )
 
-        # PAI
+        # 5. PAI
         if d_str in pai_by_day:
             p_val = pai_by_day[d_str]
             pai_stats.append(
@@ -261,27 +294,38 @@ async def async_sync_historical_data(
                 )
             )
 
+    hass.data[DOMAIN]["history_sync_status"] = {
+        "status": "syncing",
+        "progress": 85,
+        "synced_days": len(raw_days),
+        "total_days": days,
+        "heart_rate_points": len(heart_rate_stats),
+        "last_synced_date": sorted_dates[-1] if sorted_dates else None,
+    }
+
     # Resolve sensor entity IDs from entity registry
     from homeassistant.components.recorder.const import DOMAIN as RECORDER_DOMAIN
     from homeassistant.helpers import entity_registry as er
 
     ent_reg = er.async_get(hass)
 
-    def get_entity_id(unique_suffix: str, fallback_prefix: str) -> str:
+    fallback_dev_slug = device_name.lower().replace(" ", "_").replace("-", "_")
+
+    def get_entity_id(unique_suffix: str) -> str:
         ent_id = ent_reg.async_get_entity_id("sensor", DOMAIN, f"{device_id}_{unique_suffix}")
         if ent_id:
             return ent_id
-        return f"sensor.{fallback_prefix}_{unique_suffix}"
+        return f"sensor.{fallback_dev_slug}_{unique_suffix}"
 
-    steps_eid = get_entity_id("steps", "amazfit_active")
-    distance_eid = get_entity_id("distance", "amazfit_active")
-    calories_eid = get_entity_id("calories", "amazfit_active")
-    sleep_score_eid = get_entity_id("sleep_score", "amazfit_active")
-    deep_sleep_eid = get_entity_id("deep_sleep", "amazfit_active")
-    sleep_rhr_eid = get_entity_id("sleep_rhr", "amazfit_active")
-    heart_rate_eid = get_entity_id("heart_rate", "amazfit_active")
-    stress_eid = get_entity_id("stress", "amazfit_active")
-    pai_eid = get_entity_id("pai", "amazfit_active")
+    steps_eid = get_entity_id("steps")
+    distance_eid = get_entity_id("distance")
+    calories_eid = get_entity_id("calories")
+    sleep_score_eid = get_entity_id("sleep_score")
+    deep_sleep_eid = get_entity_id("deep_sleep")
+    sleep_rhr_eid = get_entity_id("sleep_rhr")
+    heart_rate_eid = get_entity_id("heart_rate")
+    stress_eid = get_entity_id("stress")
+    pai_eid = get_entity_id("pai")
 
     stat_definitions = [
         (steps_eid, "steps", False, True, steps_stats),
@@ -318,4 +362,13 @@ async def async_sync_historical_data(
         len(stress_stats),
         len(pai_stats),
     )
+
+    hass.data[DOMAIN]["history_sync_status"] = {
+        "status": "completed",
+        "progress": 100,
+        "synced_days": len(raw_days),
+        "total_days": days,
+        "heart_rate_points": len(heart_rate_stats),
+        "last_synced_date": sorted_dates[-1] if sorted_dates else None,
+    }
     return len(raw_days)

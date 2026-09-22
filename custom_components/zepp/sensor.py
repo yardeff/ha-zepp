@@ -143,6 +143,11 @@ async def async_setup_entry(
                 ZeppBodyFatSensor(coordinator, device_id, device_name, device_info),
             ])
 
+        # 7. Historical Sync Status
+        entities.append(
+            ZeppHistorySyncSensor(coordinator, device_id, device_name, device_info, hass)
+        )
+
     async_add_entities(entities, update_before_add=False)
 
 
@@ -696,3 +701,47 @@ class ZeppBodyFatSensor(CoordinatorEntity[ZeppCoordinator], SensorEntity):
     @property
     def native_value(self) -> float | None:
         return self.coordinator.data.get("body_fat")
+
+
+class ZeppHistorySyncSensor(CoordinatorEntity[ZeppCoordinator], SensorEntity):
+    _attr_has_entity_name = True
+    _attr_name = "History Sync Status"
+    _attr_icon = "mdi:cloud-sync-outline"
+
+    def __init__(
+        self,
+        coordinator: ZeppCoordinator,
+        device_id: str,
+        device_name: str,
+        device_info: DeviceInfo,
+        hass: HomeAssistant,
+    ) -> None:
+        super().__init__(coordinator)
+        self._hass = hass
+        self._attr_unique_id = f"{device_id}_history_sync_status"
+        self._attr_device_info = device_info
+
+    @property
+    def native_value(self) -> str:
+        status_info = self._hass.data.get(DOMAIN, {}).get("history_sync_status", {})
+        status = status_info.get("status", "idle")
+        progress = status_info.get("progress", 100 if status == "completed" else 0)
+        if status == "syncing":
+            synced = status_info.get("synced_days", 0)
+            total = status_info.get("total_days", 365)
+            return f"Syncing ({synced}/{total} days)"
+        elif status == "completed":
+            return "Completed"
+        return "Idle"
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        status_info = self._hass.data.get(DOMAIN, {}).get("history_sync_status", {})
+        return {
+            "status": status_info.get("status", "idle"),
+            "progress_percent": status_info.get("progress", 100 if status_info.get("status") == "completed" else 0),
+            "synced_days": status_info.get("synced_days", 0),
+            "total_days": status_info.get("total_days", 365),
+            "heart_rate_points": status_info.get("heart_rate_points", 0),
+            "last_synced_date": status_info.get("last_synced_date"),
+        }
