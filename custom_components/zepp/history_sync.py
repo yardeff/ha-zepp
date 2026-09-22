@@ -210,30 +210,38 @@ async def async_sync_historical_data(
         # 1. Activity: check for granular time slices (time 0..143 in stp["data"], each 10 mins)
         stp_slices = stp.get("data")
         if isinstance(stp_slices, list) and len(stp_slices) > 0:
+            slices_by_hour: dict[int, list[dict[str, Any]]] = {h: [] for h in range(24)}
+            for s in stp_slices:
+                t_idx = s.get("time", 0)
+                h_idx = min(23, max(0, t_idx // 6))
+                slices_by_hour[h_idx].append(s)
+
             day_accum_steps = 0.0
             day_accum_distance = 0.0
             day_accum_calories = 0.0
-            for s in stp_slices:
-                t_idx = s.get("time", 0)
-                slice_dt = dt + datetime.timedelta(minutes=t_idx * 10)
-                s_step = float(s.get("step", 0))
-                s_dis = float(s.get("dis", 0))
-                s_cal = float(s.get("cal", 0))
-                day_accum_steps += s_step
-                day_accum_distance += s_dis
-                day_accum_calories += s_cal
-                running_steps += s_step
-                running_distance += s_dis
-                running_calories += s_cal
-                steps_stats.append(
-                    StatisticData(start=slice_dt, state=day_accum_steps, sum=running_steps)
-                )
-                distance_stats.append(
-                    StatisticData(start=slice_dt, state=day_accum_distance, sum=running_distance)
-                )
-                calories_stats.append(
-                    StatisticData(start=slice_dt, state=day_accum_calories, sum=running_calories)
-                )
+
+            for h in range(24):
+                hr_slices = slices_by_hour[h]
+                h_steps = sum(float(s.get("step", 0)) for s in hr_slices)
+                h_dis = sum(float(s.get("dis", 0)) for s in hr_slices)
+                h_cal = sum(float(s.get("cal", 0)) for s in hr_slices)
+                if h_steps > 0 or h_dis > 0 or h_cal > 0 or h == 0 or h == 23:
+                    hour_dt = dt.replace(hour=h, minute=0, second=0, microsecond=0)
+                    day_accum_steps += h_steps
+                    day_accum_distance += h_dis
+                    day_accum_calories += h_cal
+                    running_steps += h_steps
+                    running_distance += h_dis
+                    running_calories += h_cal
+                    steps_stats.append(
+                        StatisticData(start=hour_dt, state=day_accum_steps, sum=running_steps)
+                    )
+                    distance_stats.append(
+                        StatisticData(start=hour_dt, state=day_accum_distance, sum=running_distance)
+                    )
+                    calories_stats.append(
+                        StatisticData(start=hour_dt, state=day_accum_calories, sum=running_calories)
+                    )
         else:
             # Fallback to daily total if slices are not available
             day_steps = float(stp.get("ttl", 0))
@@ -273,21 +281,27 @@ async def async_sync_historical_data(
                 StatisticData(start=dt, mean=rhr, min=rhr, max=rhr, state=rhr)
             )
 
-        # 3. Heart Rate: full resolution directly as recorded by watch (per minute)
+        # 3. Heart Rate: aggregate raw minute samples into hourly min/max/mean buckets (HA recorder requirement)
         if d_str in raw_hr_by_day:
             raw_hr = raw_hr_by_day[d_str]
-            for m in range(min(1440, len(raw_hr))):
-                hr_val = raw_hr[m]
-                if 20 <= hr_val <= 240:
-                    hr_dt = dt + datetime.timedelta(minutes=m)
-                    val_float = float(hr_val)
+            for h in range(24):
+                hr_hour_dt = dt.replace(hour=h, minute=0, second=0, microsecond=0)
+                hour_bytes = [
+                    raw_hr[m]
+                    for m in range(h * 60, min((h + 1) * 60, len(raw_hr)))
+                    if 20 <= raw_hr[m] <= 240
+                ]
+                if hour_bytes:
+                    h_min = float(min(hour_bytes))
+                    h_max = float(max(hour_bytes))
+                    h_mean = round(sum(hour_bytes) / len(hour_bytes), 1)
                     heart_rate_stats.append(
                         StatisticData(
-                            start=hr_dt,
-                            min=val_float,
-                            max=val_float,
-                            mean=val_float,
-                            state=val_float,
+                            start=hr_hour_dt,
+                            min=h_min,
+                            max=h_max,
+                            mean=h_mean,
+                            state=h_mean,
                         )
                     )
 
@@ -368,6 +382,7 @@ async def async_sync_historical_data(
             continue
         meta = StatisticMetaData(
             has_mean=has_mean,
+            mean_type=1 if has_mean else 0,
             has_sum=has_sum,
             name=None,
             source=RECORDER_DOMAIN,

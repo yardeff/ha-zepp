@@ -102,6 +102,8 @@ class ZeppCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         now_ms = int(now.timestamp() * 1000)
         day_ago_ms = int((now - datetime.timedelta(days=2)).timestamp() * 1000)
 
+        three_days_ago_str = (now - datetime.timedelta(days=3)).strftime("%Y-%m-%d")
+
         # Preserve previously fetched valid data to prevent temporary 0 dips on network latency
         result: dict[str, Any] = dict(self.data) if self.data else {
             "steps": 0,
@@ -147,26 +149,26 @@ class ZeppCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # 1. Band data: Steps, Distance, Calories, Sleep, and Heart Rate
         try:
             band_items = await async_fetch_band_data(
-                session, self.host, self.apptoken, self.userid, yesterday_str, today_str, query_type="detail"
+                session, self.host, self.apptoken, self.userid, three_days_ago_str, today_str, query_type="detail"
             )
             if band_items:
-                # Strictly isolate today's record for daily accumulators and live HR
-                today_item = next((item for item in band_items if item.get("date_time") == today_str), None)
-                if today_item:
-                    summary_raw = today_item.get("summary")
-                    if summary_raw:
-                        summary = decode_band_summary(summary_raw)
-                        if summary:
-                            if "stp" in summary:
-                                stp = summary["stp"]
-                                result["steps"] = stp.get("ttl", 0)
-                                result["distance"] = stp.get("dis", 0)
-                                result["calories"] = stp.get("cal", 0)
-                            if "goal" in summary:
-                                result["step_goal"] = summary["goal"]
+                # 1. Activity: check today first, fallback to latest available day
+                active_item = next((item for item in reversed(band_items) if item.get("date_time") == today_str), band_items[-1])
+                summary_raw = active_item.get("summary")
+                if summary_raw:
+                    summary = decode_band_summary(summary_raw)
+                    if summary:
+                        if "stp" in summary:
+                            stp = summary["stp"]
+                            result["steps"] = stp.get("ttl", result.get("steps", 0))
+                            result["distance"] = stp.get("dis", result.get("distance", 0))
+                            result["calories"] = stp.get("cal", result.get("calories", 0))
+                        if "goal" in summary:
+                            result["step_goal"] = summary.get("goal", result.get("step_goal", 8000))
 
-                    # Extract live heart rate from today's data_hr
-                    data_hr = today_item.get("data_hr")
+                # 2. Extract latest valid heart rate from most recent available data_hr
+                for item in reversed(band_items):
+                    data_hr = item.get("data_hr")
                     if data_hr:
                         try:
                             import base64
@@ -177,12 +179,13 @@ class ZeppCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                                 result["hr_min"] = min(valid_hr)
                                 result["hr_max"] = max(valid_hr)
                                 result["hr_avg"] = round(sum(valid_hr) / len(valid_hr), 1)
+                                break
                         except Exception as hr_err:
                             _LOGGER.debug("Error decoding data_hr: %s", hr_err)
 
                 # Sleep analysis: inspect most recent recorded sleep session (today or yesterday)
                 for item in reversed(band_items):
-                    if result["sleep_score"] is not None:
+                    if result.get("sleep_score") is not None:
                         break
                     summary_raw = item.get("summary")
                     if summary_raw:
@@ -200,7 +203,7 @@ class ZeppCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                             result["wake_count"] = slp.get("wc")
                             result["sleep_duration"] = dp + lt + dt
                             result["sleep_rhr"] = slp.get("rhr")
-                            if result["sleep_rhr"] and result["resting_hr"] is None:
+                            if result["sleep_rhr"]:
                                 result["resting_hr"] = result["sleep_rhr"]
         except ZeppAuthError:
             raise
@@ -212,13 +215,17 @@ class ZeppCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             stress_events = await async_fetch_user_events(
                 session, self.host, self.apptoken, self.userid, "all_day_stress", from_ts=day_ago_ms, to_ts=now_ms, limit=5
             )
+            if not stress_events:
+                stress_events = await async_fetch_user_events(
+                    session, self.host, self.apptoken, self.userid, "all_day_stress", limit=10
+                )
             if stress_events:
                 for event in stress_events:
                     avg_stress = event.get("avgStress")
                     if avg_stress is not None:
                         try:
                             val = float(avg_stress)
-                            if val > 0 and result["stress"] is None:
+                            if val > 0:
                                 result["stress"] = round(val, 1)
                                 if event.get("minStress") is not None:
                                     result["stress_min"] = float(event["minStress"])
