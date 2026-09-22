@@ -66,6 +66,7 @@ async def async_sync_historical_data(
     cursor = start_date
     raw_days: dict[str, dict[str, Any]] = {}
     raw_hr_by_day: dict[str, bytes] = {}
+    raw_activity_by_day: dict[str, bytes] = {}
 
     while cursor < now:
         chunk_end = min(cursor + datetime.timedelta(days=chunk_size_days), now)
@@ -90,6 +91,13 @@ async def async_sync_historical_data(
                 if d_hr and d_str not in raw_hr_by_day:
                     try:
                         raw_hr_by_day[d_str] = base64.b64decode(d_hr)
+                    except Exception:
+                        pass
+
+                d_act = item.get("data")
+                if d_act and d_str not in raw_activity_by_day:
+                    try:
+                        raw_activity_by_day[d_str] = base64.b64decode(d_act)
                     except Exception:
                         pass
         except ZeppAuthError:
@@ -207,59 +215,74 @@ async def async_sync_historical_data(
         stp = day_data.get("stp", {})
         slp = day_data.get("slp", {})
 
-        # 1. Activity: check for granular time slices (time 0..143 in stp["data"], each 10 mins)
+        # 1. Activity: extract from minute activity bytes (4320 bytes), slices, or day ttl
+        day_steps_ttl = float(stp.get("ttl", 0))
+        day_dis_ttl = float(stp.get("dis", 0))
+        day_cal_ttl = float(stp.get("cal", 0))
+
+        raw_act = raw_activity_by_day.get(d_str)
         stp_slices = stp.get("data")
-        if isinstance(stp_slices, list) and len(stp_slices) > 0:
-            slices_by_hour: dict[int, list[dict[str, Any]]] = {h: [] for h in range(24)}
+
+        # Determine hourly steps breakdown
+        hourly_steps: list[float] = [0.0] * 24
+        if raw_act and len(raw_act) >= 4320:
+            # Zepp minute-by-minute activity: 1440 minutes, 3 bytes per minute.
+            # Byte 2 is the exact step count for that minute!
+            for h in range(24):
+                h_sum = 0.0
+                for m in range(60):
+                    idx = (h * 60 + m) * 3 + 2
+                    if idx < len(raw_act):
+                        h_sum += float(raw_act[idx])
+                hourly_steps[h] = h_sum
+        elif isinstance(stp_slices, list) and len(stp_slices) > 0:
             for s in stp_slices:
                 t_idx = s.get("time", 0)
                 h_idx = min(23, max(0, t_idx // 6))
-                slices_by_hour[h_idx].append(s)
+                hourly_steps[h_idx] += float(s.get("step", 0))
+        elif day_steps_ttl > 0:
+            active_hours = range(8, 21)
+            share = day_steps_ttl / len(active_hours)
+            for h in active_hours:
+                hourly_steps[h] = share
 
-            day_accum_steps = 0.0
-            day_accum_distance = 0.0
-            day_accum_calories = 0.0
+        # Continuous hourly accumulation for Home Assistant TOTAL_INCREASING LTS
+        day_accum_steps = 0.0
+        day_accum_distance = 0.0
+        day_accum_calories = 0.0
 
-            for h in range(24):
-                hr_slices = slices_by_hour[h]
-                h_steps = sum(float(s.get("step", 0)) for s in hr_slices)
-                h_dis = sum(float(s.get("dis", 0)) for s in hr_slices)
-                h_cal = sum(float(s.get("cal", 0)) for s in hr_slices)
-                if h_steps > 0 or h_dis > 0 or h_cal > 0 or h == 0 or h == 23:
-                    hour_dt = dt.replace(hour=h, minute=0, second=0, microsecond=0)
-                    day_accum_steps += h_steps
-                    day_accum_distance += h_dis
-                    day_accum_calories += h_cal
-                    running_steps += h_steps
-                    running_distance += h_dis
-                    running_calories += h_cal
-                    steps_stats.append(
-                        StatisticData(start=hour_dt, state=day_accum_steps, sum=running_steps)
-                    )
-                    distance_stats.append(
-                        StatisticData(start=hour_dt, state=day_accum_distance, sum=running_distance)
-                    )
-                    calories_stats.append(
-                        StatisticData(start=hour_dt, state=day_accum_calories, sum=running_calories)
-                    )
-        else:
-            # Fallback to daily total if slices are not available
-            day_steps = float(stp.get("ttl", 0))
-            running_steps += day_steps
+        for h in range(24):
+            hour_dt = dt.replace(hour=h, minute=0, second=0, microsecond=0)
+            if hour_dt > now:
+                break
+
+            h_s = hourly_steps[h]
+            if day_steps_ttl > 0:
+                ratio = h_s / day_steps_ttl
+                h_d = round(day_dis_ttl * ratio, 1)
+                h_c = round(day_cal_ttl * ratio, 1)
+            else:
+                h_d = 0.0
+                h_c = 0.0
+
+            day_accum_steps += h_s
+            day_accum_distance += h_d
+            day_accum_calories += h_c
+            running_steps += h_s
+            running_distance += h_d
+            running_calories += h_c
+
+            # We write StatisticData for EVERY valid hour of the day.
+            # Even if h_s == 0 (e.g. resting), state remains at current day_accum_steps,
+            # which completely eliminates 0-dips and jagged cliff drops in HA LTS!
             steps_stats.append(
-                StatisticData(start=dt, state=day_steps, sum=running_steps)
+                StatisticData(start=hour_dt, state=day_accum_steps, sum=running_steps)
             )
-
-            day_dis = float(stp.get("dis", 0))
-            running_distance += day_dis
             distance_stats.append(
-                StatisticData(start=dt, state=day_dis, sum=running_distance)
+                StatisticData(start=hour_dt, state=day_accum_distance, sum=running_distance)
             )
-
-            day_cal = float(stp.get("cal", 0))
-            running_calories += day_cal
             calories_stats.append(
-                StatisticData(start=dt, state=day_cal, sum=running_calories)
+                StatisticData(start=hour_dt, state=day_accum_calories, sum=running_calories)
             )
 
         # 2. Sleep metrics

@@ -152,19 +152,52 @@ class ZeppCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 session, self.host, self.apptoken, self.userid, three_days_ago_str, today_str, query_type="detail"
             )
             if band_items:
-                # 1. Activity: check today first, fallback to latest available day
-                active_item = next((item for item in reversed(band_items) if item.get("date_time") == today_str), band_items[-1])
-                summary_raw = active_item.get("summary")
-                if summary_raw:
-                    summary = decode_band_summary(summary_raw)
-                    if summary:
-                        if "stp" in summary:
-                            stp = summary["stp"]
-                            result["steps"] = stp.get("ttl", result.get("steps", 0))
-                            result["distance"] = stp.get("dis", result.get("distance", 0))
-                            result["calories"] = stp.get("cal", result.get("calories", 0))
-                        if "goal" in summary:
-                            result["step_goal"] = summary.get("goal", result.get("step_goal", 8000))
+                # 1. Activity: strictly look for today record; NEVER leak yesterday steps into today!
+                today_item = next((item for item in reversed(band_items) if item.get("date_time") == today_str), None)
+                if today_item:
+                    summary_raw = today_item.get("summary")
+                    if summary_raw:
+                        summary = decode_band_summary(summary_raw)
+                        if summary:
+                            if "stp" in summary:
+                                stp = summary["stp"]
+                                result["steps"] = int(stp.get("ttl", 0))
+                                result["distance"] = int(stp.get("dis", 0))
+                                result["calories"] = int(stp.get("cal", 0))
+                    # Check if today_item has real-time minute data
+                    act_raw = today_item.get("data")
+                    if act_raw and not result.get("steps"):
+                        try:
+                            import base64
+                            raw_act = base64.b64decode(act_raw)
+                            min_steps = sum(raw_act[m * 3 + 2] for m in range(min(1440, len(raw_act) // 3)))
+                            if min_steps > 0:
+                                result["steps"] = min_steps
+                        except Exception:
+                            pass
+                    self._last_steps_date = today_str
+                else:
+                    # Today has not synced from watch to Zepp Cloud yet.
+                    # Keep previous reading if from today, otherwise 0. NEVER use yesterday's total!
+                    prev_date = getattr(self, "_last_steps_date", None)
+                    if prev_date == today_str and self.data and self.data.get("steps") is not None:
+                        result["steps"] = self.data.get("steps", 0)
+                        result["distance"] = self.data.get("distance", 0)
+                        result["calories"] = self.data.get("calories", 0)
+                    else:
+                        result["steps"] = 0
+                        result["distance"] = 0
+                        result["calories"] = 0
+                    self._last_steps_date = today_str
+
+                # Step goal can be taken from the most recent available summary
+                for item in reversed(band_items):
+                    s_raw = item.get("summary")
+                    if s_raw:
+                        s_dec = decode_band_summary(s_raw)
+                        if s_dec and "goal" in s_dec:
+                            result["step_goal"] = int(s_dec.get("goal", 8000))
+                            break
 
                 # 2. Extract latest valid heart rate from most recent available data_hr
                 for item in reversed(band_items):
