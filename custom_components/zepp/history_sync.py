@@ -199,14 +199,23 @@ async def async_sync_historical_data(
     stress_stats: list[StatisticData] = []
     pai_stats: list[StatisticData] = []
 
+    import zoneinfo
+    user_tz_name = getattr(hass.config, "time_zone", None) or "UTC"
+    try:
+        user_tz = zoneinfo.ZoneInfo(user_tz_name)
+    except Exception:
+        user_tz = datetime.timezone.utc
+
+    now_user = datetime.datetime.now(user_tz)
     running_steps = 0.0
     running_distance = 0.0
     running_calories = 0.0
 
     for d_str in sorted_dates:
         try:
+            # Zepp day record is aligned with user's local timezone (e.g. Europe/Moscow)
             dt = datetime.datetime.strptime(d_str, "%Y-%m-%d").replace(
-                hour=0, minute=0, second=0, microsecond=0, tzinfo=datetime.timezone.utc
+                hour=0, minute=0, second=0, microsecond=0, tzinfo=user_tz
             )
         except ValueError:
             continue
@@ -253,7 +262,7 @@ async def async_sync_historical_data(
 
         for h in range(24):
             hour_dt = dt.replace(hour=h, minute=0, second=0, microsecond=0)
-            if hour_dt > now:
+            if hour_dt > now_user:
                 break
 
             h_s = hourly_steps[h]
