@@ -3,9 +3,10 @@
   "name": "Zepp (Amazfit)",
   "codeowners": ["@yardeff"],
   "config_flow": true,
-  "documentation": "https://github.com/yardeff/ha-zepp",
   "dependencies": ["http", "recorder"],
+  "documentation": "https://github.com/yardeff/ha-zepp",
   "iot_class": "cloud_polling",
   "issue_tracker": "https://github.com/yardeff/ha-zepp/issues",
+  "requirements": [],
   "version": "1.0.0"
 }

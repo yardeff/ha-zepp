@@ -176,6 +176,9 @@ class ZeppConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             step_id="token",
             data_schema=schema,
             errors=errors,
+            description_placeholders={
+                "login_url": "https://user.zepp.com/universalLogin/index.html#/login?project_name=watchface&project_redirect_uri=https%3A%2F%2Fwatchface.zepp.com%2Fcreate&platform_app=com.huami.webapp&specify_lang=en"
+            },
         )
 
     async def async_step_reauth(
