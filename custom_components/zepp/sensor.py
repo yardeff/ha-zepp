@@ -20,6 +20,7 @@ from homeassistant.const import (
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.device_registry import DeviceInfo
+from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
@@ -720,6 +721,17 @@ class ZeppHistorySyncSensor(CoordinatorEntity[ZeppCoordinator], SensorEntity):
         self._hass = hass
         self._attr_unique_id = f"{device_id}_history_sync_status"
         self._attr_device_info = device_info
+
+    async def async_added_to_hass(self) -> None:
+        """Register dispatcher listener for real-time progress updates."""
+        await super().async_added_to_hass()
+        self.async_on_remove(
+            async_dispatcher_connect(
+                self._hass,
+                f"{DOMAIN}_history_sync_update",
+                self.async_write_ha_state,
+            )
+        )
 
     @property
     def native_value(self) -> str:

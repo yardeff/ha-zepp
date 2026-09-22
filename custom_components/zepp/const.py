@@ -23,6 +23,7 @@ AUTH_CALLBACK_NAME = "api:zepp:callback"
 DEFAULT_REGIONS = [
     "https://api-mifit-ru.huami.com",
     "https://api-mifit-de2.huami.com",
+    "https://api-mifit-us3.zepp.com",
     "https://api-mifit-us2.zepp.com",
     "https://api-mifit.huami.com",
     "https://api-mifit-sg2.huami.com",

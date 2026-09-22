@@ -11,6 +11,7 @@ from homeassistant.components.recorder.models import StatisticData, StatisticMet
 from homeassistant.components.recorder.statistics import async_import_statistics
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.util import dt as dt_util
 
 from .api import (
@@ -42,7 +43,23 @@ async def async_sync_historical_data(
     now = dt_util.now()
     start_date = now - datetime.timedelta(days=days)
 
+    current_status = hass.data.get(DOMAIN, {}).get("history_sync_status", {}).get("status")
+    if current_status == "syncing":
+        _LOGGER.info("History sync is already in progress, skipping redundant trigger")
+        return 0
+
     _LOGGER.info("Starting Zepp history sync for %s days (%s to %s)", days, start_date.strftime("%Y-%m-%d"), now.strftime("%Y-%m-%d"))
+
+    # Global/runtime sync progress tracker initialized immediately
+    hass.data.setdefault(DOMAIN, {})["history_sync_status"] = {
+        "status": "syncing",
+        "progress": 5,
+        "synced_days": 0,
+        "total_days": days,
+        "heart_rate_points": 0,
+        "last_synced_date": None,
+    }
+    async_dispatcher_send(hass, f"{DOMAIN}_history_sync_update")
 
     # 1. Fetch band_data (Steps, Calories, Distance, Sleep, and data_hr for Heart Rate)
     chunk_size_days = 30
@@ -82,7 +99,15 @@ async def async_sync_historical_data(
             _LOGGER.warning("Error fetching Zepp history chunk %s..%s: %s", from_str, to_str, err)
 
         cursor = chunk_end + datetime.timedelta(days=1)
-        await asyncio.sleep(0.35)
+        progress_val = min(75, int(5 + (len(raw_days) / max(1, days)) * 70))
+        hass.data[DOMAIN]["history_sync_status"].update({
+            "progress": progress_val,
+            "synced_days": len(raw_days),
+            "heart_rate_points": sum(len(raw_hr_by_day.get(d, [])) for d in raw_hr_by_day),
+            "last_synced_date": sorted(raw_days.keys())[-1] if raw_days else None,
+        })
+        async_dispatcher_send(hass, f"{DOMAIN}_history_sync_update")
+        await asyncio.sleep(0.2)
 
     # 2. Fetch Stress Events
     stress_by_day: dict[str, dict[str, float]] = {}
@@ -134,6 +159,15 @@ async def async_sync_historical_data(
 
     if not raw_days:
         _LOGGER.info("No historical Zepp band data retrieved")
+        hass.data[DOMAIN]["history_sync_status"] = {
+            "status": "completed",
+            "progress": 100,
+            "synced_days": 0,
+            "total_days": days,
+            "heart_rate_points": 0,
+            "last_synced_date": None,
+        }
+        async_dispatcher_send(hass, f"{DOMAIN}_history_sync_update")
         return 0
 
     _LOGGER.info(
@@ -143,17 +177,6 @@ async def async_sync_historical_data(
         len(stress_by_day),
         len(pai_by_day),
     )
-
-    # Global/runtime sync progress tracker
-    hass.data.setdefault(DOMAIN, {}).setdefault("history_sync_status", {})
-    hass.data[DOMAIN]["history_sync_status"] = {
-        "status": "syncing",
-        "progress": 0,
-        "synced_days": 0,
-        "total_days": days,
-        "heart_rate_points": 0,
-        "last_synced_date": None,
-    }
 
     # Sort days chronologically
     sorted_dates = sorted(raw_days.keys())
@@ -302,6 +325,7 @@ async def async_sync_historical_data(
         "heart_rate_points": len(heart_rate_stats),
         "last_synced_date": sorted_dates[-1] if sorted_dates else None,
     }
+    async_dispatcher_send(hass, f"{DOMAIN}_history_sync_update")
 
     # Resolve sensor entity IDs from entity registry
     from homeassistant.components.recorder.const import DOMAIN as RECORDER_DOMAIN
@@ -371,4 +395,5 @@ async def async_sync_historical_data(
         "heart_rate_points": len(heart_rate_stats),
         "last_synced_date": sorted_dates[-1] if sorted_dates else None,
     }
+    async_dispatcher_send(hass, f"{DOMAIN}_history_sync_update")
     return len(raw_days)

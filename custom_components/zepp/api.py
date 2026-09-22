@@ -299,6 +299,13 @@ async def async_exchange_access_token(
     }
 
 
+def sanitize_region_host(host: str) -> str:
+    """Map deprecated or timing-out regional endpoints to reliable modern endpoints."""
+    if "api-mifit-us2.zepp.com" in host:
+        return "https://api-mifit-us3.zepp.com"
+    return host
+
+
 def parse_region_host_from_cname(cname: str | None) -> list[str]:
     """Extract possible api-mifit hosts from cname parameter."""
     hosts = []
@@ -310,7 +317,9 @@ def parse_region_host_from_cname(cname: str | None) -> list[str]:
             if not part.startswith("http"):
                 part = f"https://{part}"
             if "api-mifit" in part:
-                hosts.append(part)
+                sanitized = sanitize_region_host(part)
+                if sanitized not in hosts:
+                    hosts.append(sanitized)
 
     for def_host in DEFAULT_REGIONS:
         if def_host not in hosts:
@@ -326,7 +335,7 @@ async def async_fetch_devices(
     host: str,
 ) -> list[dict[str, Any]]:
     """Fetch linked devices from a specific Zepp regional host."""
-    url = f"{host}/users/{userid}/devices"
+    url = f"{sanitize_region_host(host)}/users/{userid}/devices"
     headers = get_default_headers(apptoken)
     params = {
         "enableMultiDeviceOnMultiType": ["true", "true"],
@@ -467,7 +476,7 @@ async def async_fetch_band_data(
     query_type: str = "summary",
 ) -> list[dict[str, Any]]:
     """Fetch activity and sleep band data for a date range (YYYY-MM-DD)."""
-    url = f"{host}/v1/data/band_data.json"
+    url = f"{sanitize_region_host(host)}/v1/data/band_data.json"
     headers = get_default_headers(apptoken)
     params = {
         "userid": userid,
@@ -506,7 +515,7 @@ async def async_fetch_user_events(
     limit: int = 20,
 ) -> list[dict[str, Any]]:
     """Fetch user-scoped events (e.g. all_day_stress, blood_oxygen, PaiHealthInfo)."""
-    url = f"{host}/users/{userid}/events"
+    url = f"{sanitize_region_host(host)}/users/{userid}/events"
     headers = get_default_headers(apptoken)
     params: dict[str, Any] = {
         "eventType": event_type,
@@ -547,7 +556,7 @@ async def async_fetch_v2_events(
     limit: int = 20,
 ) -> list[dict[str, Any]]:
     """Fetch v2 events (e.g. HRVRMSSD, Charge/stress_data, RespiratoryRate)."""
-    url = f"{host}/v2/users/me/events"
+    url = f"{sanitize_region_host(host)}/v2/users/me/events"
     headers = get_default_headers(apptoken)
     params: dict[str, Any] = {
         "eventType": event_type,
@@ -586,7 +595,7 @@ async def async_fetch_sport_load(
     limit: int = 10,
 ) -> list[dict[str, Any]]:
     """Fetch WatchSportStatistics SPORT_LOAD."""
-    url = f"{host}/v2/watch/users/{userid}/WatchSportStatistics/SPORT_LOAD"
+    url = f"{sanitize_region_host(host)}/v2/watch/users/{userid}/WatchSportStatistics/SPORT_LOAD"
     headers = get_default_headers(apptoken)
     params = {
         "startDay": start_day,
@@ -621,7 +630,7 @@ async def async_fetch_weight_records(
     limit: int = 50,
 ) -> list[dict[str, Any]]:
     """Fetch scale body composition and weight records."""
-    url = f"{host}/users/{userid}/members/{member_id}/weightRecords"
+    url = f"{sanitize_region_host(host)}/users/{userid}/members/{member_id}/weightRecords"
     headers = get_default_headers(apptoken)
     params: dict[str, Any] = {
         "limit": str(limit),
