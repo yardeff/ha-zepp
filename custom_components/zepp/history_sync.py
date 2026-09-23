@@ -420,6 +420,7 @@ async def async_sync_historical_data(
             source=RECORDER_DOMAIN,
             statistic_id=stat_id,
             unit_of_measurement=unit,
+            unit_class=None,
         )
         try:
             async_import_statistics(hass, meta, stats_list)

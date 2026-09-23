@@ -238,6 +238,13 @@ class ZeppCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                             result["sleep_rhr"] = slp.get("rhr")
                             if result["sleep_rhr"]:
                                 result["resting_hr"] = result["sleep_rhr"]
+
+                if band_items:
+                    try:
+                        from homeassistant.components.recorder import get_instance
+                        await get_instance(self.hass).async_add_executor_job(self._sync_hourly_statistics, band_items)
+                    except Exception as hist_err:
+                        _LOGGER.debug("Failed backfilling hourly statistics: %s", hist_err)
         except ZeppAuthError:
             raise
         except Exception as err:
@@ -483,3 +490,134 @@ class ZeppCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         except Exception as err:
             _LOGGER.exception("Error updating Zepp coordinator: %s", err)
             raise UpdateFailed(f"Error communicating with Zepp cloud: {err}") from err
+
+    def _sync_hourly_statistics(self, band_items: list[dict[str, Any]]) -> None:
+        """Backfill hourly statistics into HA recorder for detailed bar charts."""
+        try:
+            from sqlalchemy import text
+            from homeassistant.components.recorder.util import session_scope
+            import base64
+        except ImportError:
+            return
+
+        try:
+            with session_scope(hass=self.hass) as session:
+                res = session.execute(text(
+                    "SELECT id, statistic_id FROM statistics_meta "
+                    "WHERE statistic_id IN ('sensor.amazfit_active_steps', 'sensor.amazfit_active_distance', 'sensor.amazfit_active_calories')"
+                )).fetchall()
+                meta_map = {row[1]: row[0] for row in res}
+                step_meta = meta_map.get("sensor.amazfit_active_steps")
+                dis_meta = meta_map.get("sensor.amazfit_active_distance")
+                cal_meta = meta_map.get("sensor.amazfit_active_calories")
+                if not step_meta:
+                    return
+
+                for item in band_items:
+                    date_str = item.get("date_time")
+                    act_raw = item.get("data")
+                    if not date_str or not act_raw:
+                        continue
+
+                    try:
+                        raw_act = base64.b64decode(act_raw)
+                    except Exception:
+                        continue
+
+                    if len(raw_act) < 3:
+                        continue
+
+                    summary_raw = item.get("summary")
+                    summary = decode_band_summary(summary_raw) if summary_raw else {}
+                    stp = summary.get("stp", {})
+                    total_steps = int(stp.get("ttl", 0))
+                    total_dis = int(stp.get("dis", 0))
+                    total_cal = int(stp.get("cal", 0))
+
+                    dis_ratio = total_dis / total_steps if total_steps > 0 else 0.726
+                    cal_ratio = total_cal / total_steps if total_steps > 0 else 0.029
+
+                    parts = [int(p) for p in date_str.split("-")]
+                    day_start = dt_util.as_local(datetime.datetime(parts[0], parts[1], parts[2], 0, 0, 0))
+                    day_start_ts = day_start.timestamp()
+
+                    base_row = session.execute(text(
+                        "SELECT sum FROM statistics WHERE metadata_id = :mid AND start_ts < :start_ts ORDER BY start_ts DESC LIMIT 1"
+                    ), {"mid": step_meta, "start_ts": day_start_ts}).fetchone()
+                    base_step_sum = float(base_row[0]) if base_row and base_row[0] is not None else 0.0
+
+                    base_dis_row = session.execute(text(
+                        "SELECT sum FROM statistics WHERE metadata_id = :mid AND start_ts < :start_ts ORDER BY start_ts DESC LIMIT 1"
+                    ), {"mid": dis_meta, "start_ts": day_start_ts}).fetchone() if dis_meta else None
+                    base_dis_sum = float(base_dis_row[0]) if base_dis_row and base_dis_row[0] is not None else 0.0
+
+                    base_cal_row = session.execute(text(
+                        "SELECT sum FROM statistics WHERE metadata_id = :mid AND start_ts < :start_ts ORDER BY start_ts DESC LIMIT 1"
+                    ), {"mid": cal_meta, "start_ts": day_start_ts}).fetchone() if cal_meta else None
+                    base_cal_sum = float(base_cal_row[0]) if base_cal_row and base_cal_row[0] is not None else 0.0
+
+                    now_local = dt_util.now()
+                    is_today = (day_start.date() == now_local.date())
+                    max_hour = now_local.hour if is_today else 23
+
+                    cum_steps = 0
+                    for h in range(max_hour + 1):
+                        dt_hour = day_start + datetime.timedelta(hours=h)
+                        hour_ts = dt_hour.timestamp()
+
+                        m_start = h * 60
+                        m_end = (h + 1) * 60
+                        if m_start < len(raw_act) // 3:
+                            h_steps = sum(raw_act[m * 3 + 2] for m in range(m_start, min(m_end, len(raw_act) // 3)))
+                        else:
+                            h_steps = 0
+
+                        cum_steps += h_steps
+                        cum_dis = round(cum_steps * dis_ratio)
+                        cum_cal = round(cum_steps * cal_ratio)
+
+                        step_sum = base_step_sum + cum_steps
+                        dis_sum = base_dis_sum + cum_dis
+                        cal_sum = base_cal_sum + cum_cal
+
+                        existing = session.execute(text(
+                            "SELECT id FROM statistics WHERE metadata_id = :mid AND start_ts = :ts"
+                        ), {"mid": step_meta, "ts": hour_ts}).fetchone()
+                        if existing:
+                            session.execute(text(
+                                "UPDATE statistics SET state = :st, sum = :sm WHERE id = :id"
+                            ), {"st": float(cum_steps), "sm": step_sum, "id": existing[0]})
+                        else:
+                            session.execute(text(
+                                "INSERT INTO statistics (metadata_id, start_ts, state, sum) VALUES (:mid, :ts, :st, :sm)"
+                            ), {"mid": step_meta, "ts": hour_ts, "st": float(cum_steps), "sm": step_sum})
+
+                        if dis_meta:
+                            existing_d = session.execute(text(
+                                "SELECT id FROM statistics WHERE metadata_id = :mid AND start_ts = :ts"
+                            ), {"mid": dis_meta, "ts": hour_ts}).fetchone()
+                            if existing_d:
+                                session.execute(text(
+                                    "UPDATE statistics SET state = :st, sum = :sm WHERE id = :id"
+                                ), {"st": float(cum_dis), "sm": dis_sum, "id": existing_d[0]})
+                            else:
+                                session.execute(text(
+                                    "INSERT INTO statistics (metadata_id, start_ts, state, sum) VALUES (:mid, :ts, :st, :sm)"
+                                ), {"mid": dis_meta, "ts": hour_ts, "st": float(cum_dis), "sm": dis_sum})
+
+                        if cal_meta:
+                            existing_c = session.execute(text(
+                                "SELECT id FROM statistics WHERE metadata_id = :mid AND start_ts = :ts"
+                            ), {"mid": cal_meta, "ts": hour_ts}).fetchone()
+                            if existing_c:
+                                session.execute(text(
+                                    "UPDATE statistics SET state = :st, sum = :sm WHERE id = :id"
+                                ), {"st": float(cum_cal), "sm": cal_sum, "id": existing_c[0]})
+                            else:
+                                session.execute(text(
+                                    "INSERT INTO statistics (metadata_id, start_ts, state, sum) VALUES (:mid, :ts, :st, :sm)"
+                                ), {"mid": cal_meta, "ts": hour_ts, "st": float(cum_cal), "sm": cal_sum})
+
+                session.commit()
+        except Exception as err:
+            _LOGGER.debug("Error updating hourly statistics: %s", err)
